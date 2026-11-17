@@ -23,7 +23,12 @@ from app.calc import EUR
 from app.config import Settings
 from app.models import Asset, FxRate, PriceHistory
 from app.providers.base import FxProvider, PriceProvider, ProviderError, Quote
-from app.services.fx import fetch_rate_with_lookback, is_fresh, store_rate
+from app.services.fx import (
+    fetch_rate_with_lookback,
+    is_fresh,
+    rate_reference_time,
+    store_rate,
+)
 from app.timeutil import local_today, utc_now
 
 logger = logging.getLogger(__name__)
@@ -147,9 +152,10 @@ def refresh_is_due(session: Session, settings: Settings, now: datetime | None = 
         if _is_due(fetched_at, price_failures.get(asset.id), now, settings, False, False):
             return True
 
+    tz_name = settings.display_timezone
     for currency in foreign_currencies(assets):
         row = rates.get(currency)
-        fetched_at = row.fetched_at if row else None
+        fetched_at = rate_reference_time(row, tz_name) if row else None
         if _is_due(fetched_at, fx_failures.get(currency), now, settings, False, False):
             return True
     return False
@@ -302,7 +308,8 @@ def _refresh_fx(
     rates = latest_fx_rates(session)
     for currency in foreign_currencies(assets):
         row = rates.get(currency)
-        fetched_at = row.fetched_at if row else None
+        # A historical rate cached for a form prefill does not count as fresh.
+        fetched_at = rate_reference_time(row, settings.display_timezone) if row else None
         if not _is_due(fetched_at, fx_failures.get(currency), now, settings, force, retry_failed):
             report.fx_skipped += 1
             continue

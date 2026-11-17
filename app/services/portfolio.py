@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 from app import calc
 from app.calc import EUR
 from app.config import Settings
-from app.formatting import format_datetime
+from app.formatting import format_date, format_datetime
 from app.models import Asset, FxRate, PriceHistory, Transaction
 from app.services import pricing
+from app.services.fx import rate_reference_time
 from app.timeutil import utc_now
 
 ASSET_TYPE_LABELS = {"etf": "ETF", "stock": "Actions", "fund": "Fonds"}
@@ -103,19 +104,24 @@ def build_portfolio(
         positions=positions,
         totals=calc.compute_portfolio([position.result for position in positions]),
         allocations=_build_allocations(positions),
-        last_refresh_at=_last_refresh_at(prices, rates),
+        last_refresh_at=_last_refresh_at(prices, rates, settings.display_timezone),
         refresh_is_due=pricing.refresh_is_due(session, settings, now),
     )
 
 
-def last_refresh_at(session: Session) -> datetime | None:
+def last_refresh_at(session: Session, tz_name: str) -> datetime | None:
     """Time of the most recent successful provider fetch (shown in the top bar)."""
-    return _last_refresh_at(pricing.latest_prices(session), pricing.latest_fx_rates(session))
+    prices = pricing.latest_prices(session)
+    rates = pricing.latest_fx_rates(session)
+    return _last_refresh_at(prices, rates, tz_name)
 
 
-def _last_refresh_at(prices: dict[int, PriceHistory], rates: dict[str, FxRate]) -> datetime | None:
+def _last_refresh_at(
+    prices: dict[int, PriceHistory], rates: dict[str, FxRate], tz_name: str
+) -> datetime | None:
     fetched = [row.fetched_at for row in prices.values() if row.source != "manual"]
-    fetched += [row.fetched_at for row in rates.values()]
+    # For a rate: when it was current (an old rate fetched just now does not count).
+    fetched += [rate_reference_time(row, tz_name) for row in rates.values()]
     return max(fetched, default=None)
 
 
@@ -218,8 +224,14 @@ def _current_fx_rate(
         rate = latest_lot.fx_rate or 1.0
     else:
         rate = fx_row.rate
-        if now - fx_row.fetched_at > stale_after:
-            when = format_datetime(fx_row.fetched_at, settings.display_timezone)
+        # Without a rate fetched recently, the newest cached row may be an old
+        # purchase-date rate: judge it by the time it was current.
+        current_at = rate_reference_time(fx_row, settings.display_timezone)
+        if now - current_at > stale_after:
+            if current_at == fx_row.fetched_at:
+                when = format_datetime(current_at, settings.display_timezone)
+            else:
+                when = format_date(fx_row.rate_date)  # a historical rate: its date says it all
             warnings.append(f"Taux {pair} du {when} (plus de {settings.stale_after_hours} h)")
 
     failure = pricing.fx_failures.get(asset.currency)
@@ -260,7 +272,7 @@ def _legend_label(position: PositionView, positions: list[PositionView]) -> str:
     same_name = [other for other in positions if other.asset.name == asset.name]
     if len(same_name) == 1:
         return asset.name
-    return f"{asset.name} ({asset.ticker or asset.exchange or asset.isin})"
+    return f"{asset.name} · {asset.ticker or asset.exchange or asset.isin}"
 
 
 def _slices_by_type(positions: list[PositionView], total: float) -> list[AllocationSlice]:

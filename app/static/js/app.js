@@ -114,7 +114,7 @@
   });
 
   // A refreshed table arrives sorted by value: put the user's order back.
-  document.addEventListener("htmx:afterSettle", applySort);
+  document.addEventListener("htmx:afterSwap", applySort);
 
   /* ---- Error toast for failed HTMX requests ---- */
 

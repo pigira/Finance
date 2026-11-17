@@ -3,14 +3,14 @@
 All rates are EUR-based: units of foreign currency per 1 EUR.
 """
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.models import FxRate
 from app.providers.base import FxProvider, FxQuote, ProviderError
-from app.timeutil import local_today, utc_now
+from app.timeutil import local_today, to_local, utc_now
 
 # Longest closure we need to bridge: Easter (Good Friday to Easter Monday) is
 # four days without ECB publication; a week leaves a comfortable margin.
@@ -33,6 +33,22 @@ def fetch_rate_with_lookback(provider: FxProvider, currency: str, on_date: date)
 
 def is_fresh(fetched_at: datetime, now: datetime, ttl_minutes: int) -> bool:
     return now - fetched_at < timedelta(minutes=ttl_minutes)
+
+
+def rate_reference_time(row: FxRate, tz_name: str) -> datetime:
+    """The moment (UTC) at which a cached rate was "the current rate".
+
+    fx_rates mixes two kinds of rows:
+    * live rates, fetched on the day they are dated (every refresh writes one);
+    * historical rates, looked up later to prefill the form of an old purchase.
+
+    A live rate is as recent as its fetch time. A historical rate is only as
+    recent as its date, even if it was fetched a minute ago: it must never be
+    mistaken for a fresh current rate.
+    """
+    if to_local(row.fetched_at, tz_name).date() == row.rate_date:
+        return row.fetched_at
+    return datetime.combine(row.rate_date, time.min)
 
 
 def store_rate(session: Session, quote: FxQuote, rate_date: date, fetched_at: datetime) -> None:

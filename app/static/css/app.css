@@ -574,25 +574,27 @@ input:focus-visible, select:focus-visible { outline-offset: 0; border-color: var
 .donut-center span { color: var(--muted); font-size: 0.75rem; }
 .donut-center strong { font-size: 1rem; font-weight: 650; }
 
-/* Fixed layout: the name column takes what the two number columns leave,
-   so a long asset name can never widen the table beyond its container. */
+/* Fixed layout with explicit column widths: the name column takes what the
+   two number columns leave, and a long name wraps instead of widening the table. */
 .legend {
   flex: 1 1 320px;
   width: 100%;
-  max-width: 620px;
+  max-width: 700px;
   table-layout: fixed;
   border-collapse: collapse;
   font-variant-numeric: tabular-nums;
 }
-.legend th, .legend td { padding: 7px 0; border-bottom: 1px solid var(--border); }
+.legend col.legend-share { width: 84px; }
+.legend col.legend-value { width: 116px; }
+.legend th, .legend td { padding: 7px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
 .legend tr:last-child th, .legend tr:last-child td { border-bottom: 0; }
 .legend th { font-weight: 500; text-align: left; }
 .legend td { text-align: right; white-space: nowrap; }
-.legend td:nth-child(2) { width: 84px; color: var(--text-2); }
-.legend td:nth-child(3) { width: 116px; }
+.legend td:nth-child(2) { color: var(--text-2); }
 .legend tbody tr:hover th, .legend tbody tr:hover td { background: var(--surface-raised); }
-.legend-entry { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.legend-entry { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.legend-entry .swatch { margin-top: 5px; }
+.legend-name { overflow-wrap: anywhere; }
 .swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; }
 
 /* Positions table */
@@ -762,9 +764,8 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
   .legend tr:last-child { border-bottom: 0; }
   .legend th, .legend td { padding: 0; border-bottom: 0; }
   .legend th { grid-column: 1 / -1; margin-bottom: 2px; }
-  .legend td:nth-child(2) { width: auto; padding-left: 22px; text-align: left; }
-  .legend td:nth-child(3) { width: auto; }
-  .legend-name { white-space: normal; }
+  .legend colgroup { display: none; }
+  .legend td:nth-child(2) { padding-left: 22px; text-align: left; }
 
   .form-grid { grid-template-columns: minmax(0, 1fr); }
   .input-row { flex-direction: column; }

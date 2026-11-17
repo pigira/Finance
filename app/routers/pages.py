@@ -24,7 +24,7 @@ def portfolio_page(
     settings: Settings = Depends(get_settings),
 ) -> HTMLResponse:
     view = build_portfolio(session, settings)
-    return render(request, "portfolio.html", page_context(session, "portfolio", view=view))
+    return render(request, "portfolio.html", page_context(request, session, "portfolio", view=view))
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -36,6 +36,7 @@ def settings_page(
     fx_provider: FxProvider = Depends(get_fx_provider),
 ) -> HTMLResponse:
     context = page_context(
+        request,
         session,
         "settings",
         price_provider_name=price_provider.name,

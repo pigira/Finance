@@ -98,6 +98,7 @@
     {% for key, slices in view.allocations.items() %}
     <table class="legend" x-show="tab === '{{ key }}'" {% if not loop.first %}x-cloak{% endif %}>
       <caption class="sr-only">Répartition de la valeur actuelle en euros</caption>
+      <colgroup><col><col class="legend-share"><col class="legend-value"></colgroup>
       <thead class="sr-only"><tr><th scope="col">Catégorie</th><th scope="col">Part</th><th scope="col">Valeur</th></tr></thead>
       <tbody>
         {% for slice in slices %}
@@ -105,7 +106,7 @@
           <th scope="row">
             <span class="legend-entry">
               <span class="swatch" style="background: var(--series-{{ slice.color_slot }})"></span>
-              <span class="legend-name" title="{{ slice.label }}">{{ slice.label }}</span>
+              <span class="legend-name">{{ slice.label }}</span>
             </span>
           </th>
           <td>{{ slice.share | pct }}</td>

@@ -53,7 +53,8 @@ def refresh(
     # HTMX sends the address of the page the request comes from.
     current_path = urlsplit(request.headers.get("HX-Current-URL", "/")).path
     view = build_portfolio(session, settings) if current_path == "/" else None
-    context = {"last_refresh_at": last_refresh_at(session), "view": view, "oob": True}
+    refreshed_at = last_refresh_at(session, settings.display_timezone)
+    context = {"last_refresh_at": refreshed_at, "view": view, "oob": True}
     return render(request, "partials/refresh_response.html", context)
 
 

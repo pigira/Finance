@@ -12,6 +12,7 @@ from app.models import Asset, FxRate, PriceHistory
 from app.providers.base import Listing, PricePoint, PriceProvider, ProviderError, Quote
 from app.providers.mock import MockFxProvider, MockProvider
 from app.services import pricing
+from app.services.fx import get_rate_for_date
 from app.services.portfolio import build_portfolio
 from tests.conftest import EUR_ETF_LOT, GBX_ETF_LOT, MSFT_LOT_A, MSFT_LOT_B, add_lot
 
@@ -213,6 +214,46 @@ def test_fx_failure_keeps_the_page_working(session: Session, settings: Settings)
     assert any("EUR/USD" in warning for warning in position.warnings)
 
 
+def test_cached_purchase_date_rate_is_not_mistaken_for_the_current_rate(
+    session: Session, settings: Settings
+) -> None:
+    """Regression: prefilling the form caches an old rate with a recent fetch time."""
+    fx = MockFxProvider()
+    purchase_day = date(2024, 3, 15)
+    old_rate = get_rate_for_date(session, fx, settings, "USD", purchase_day, now=NOON).rate
+    assert old_rate != pytest.approx(1.10)
+
+    add_lot(session, settings, MSFT_LOT_A)
+    provider = ScriptedProvider({"MSFT": usd_quote(500.0)})
+
+    # Only that historical row exists: a refresh is due, and it fetches today's rate.
+    assert pricing.refresh_is_due(session, settings, now=NOON)
+    report = pricing.refresh_all(session, provider, fx, settings, now=NOON)
+    assert report.fx_updated == 1
+    position = build_portfolio(session, settings, now=NOON).positions[0]
+    assert position.fx_rate_now == pytest.approx(1.10)
+    assert position.result.value_eur == pytest.approx(4545.45, abs=0.01)
+    assert not position.is_stale
+
+
+def test_old_cached_rate_used_as_a_last_resort_is_flagged(
+    session: Session, settings: Settings
+) -> None:
+    class BrokenFx(MockFxProvider):
+        def get_rate(self, currency, on_date):
+            raise ProviderError("FX API down")
+
+    get_rate_for_date(session, MockFxProvider(), settings, "USD", date(2024, 3, 15), now=NOON)
+    add_lot(session, settings, MSFT_LOT_A)
+    pricing.refresh_all(
+        session, ScriptedProvider({"MSFT": usd_quote(500.0)}), BrokenFx(), settings, now=NOON
+    )
+
+    position = build_portfolio(session, settings, now=NOON).positions[0]
+    assert position.is_stale
+    assert any("Taux EUR/USD du 15/03/2024" in warning for warning in position.warnings)
+
+
 def test_quote_in_another_currency_is_rejected(session: Session, settings: Settings) -> None:
     add_lot(session, settings, EUR_ETF_LOT)
     wrong = Quote(ticker="IWDA.AS", price=101.0, currency="USD", price_scale=1.0)
@@ -281,8 +322,8 @@ def test_portfolio_matches_the_reference_figures(
 
     # Two holdings share a name (same ETF on two exchanges): the legend tells them apart.
     asset_labels = [item.label for item in view.allocations["asset"]]
-    assert "iShares Core MSCI World UCITS ETF USD (Acc) (IWDA.AS)" in asset_labels
-    assert "iShares Core MSCI World UCITS ETF USD (Acc) (SWDA.L)" in asset_labels
+    assert "iShares Core MSCI World UCITS ETF USD (Acc) · IWDA.AS" in asset_labels
+    assert "iShares Core MSCI World UCITS ETF USD (Acc) · SWDA.L" in asset_labels
     assert "Microsoft Corporation" in asset_labels
 
 

@@ -223,6 +223,7 @@ def _render_form(
         "knownAssets": known_assets,
     }
     context = page_context(
+        request,
         session,
         "portfolio" if lot else "add",  # which sidebar entry is highlighted
         values=values,

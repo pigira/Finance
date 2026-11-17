@@ -59,9 +59,16 @@ def render(
     return templates.TemplateResponse(request, template_name, context, status_code=status_code)
 
 
-def page_context(session: Session, active_page: str, **extra: Any) -> dict[str, Any]:
+def page_context(
+    request: Request, session: Session, active_page: str, **extra: Any
+) -> dict[str, Any]:
     """Context needed by base.html (sidebar highlight, top bar) plus page-specific values."""
-    return {"active_page": active_page, "last_refresh_at": last_refresh_at(session), **extra}
+    settings: Settings = request.app.state.settings
+    return {
+        "active_page": active_page,
+        "last_refresh_at": last_refresh_at(session, settings.display_timezone),
+        **extra,
+    }
 
 
 # ---- dependencies ------------------------------------------------------------
