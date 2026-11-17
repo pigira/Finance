@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "macros.html" import icon %}
+{% block title %}Paramètres{% endblock %}
+{% block heading %}Paramètres{% endblock %}
+
+{% block content %}
+<div class="settings">
+  <section class="card" aria-labelledby="sources-title">
+    <header class="card-header">
+      <h2 id="sources-title" class="card-title">Sources de données</h2>
+      <p class="card-note">Lecture seule. Ces réglages se modifient dans le fichier <code>.env</code>, puis en redémarrant l'application.</p>
+    </header>
+    <dl class="settings-list">
+      <div><dt>Cours</dt><dd>{{ {"yahoo": "Yahoo Finance (yfinance)", "mock": "Démonstration, hors ligne (mock)"}.get(price_provider_name, price_provider_name) }}</dd></div>
+      <div><dt>Taux de change</dt><dd>{{ {"ecb": "BCE via Frankfurter, repli sur Yahoo Finance", "yahoo": "Yahoo Finance", "mock": "Démonstration, hors ligne (mock)"}.get(fx_provider_name, fx_provider_name) }}</dd></div>
+      {% if fx_provider_name == "ecb" %}
+      <div><dt>API Frankfurter</dt><dd><code>{{ settings.frankfurter_base_url }}</code></dd></div>
+      {% endif %}
+      <div><dt>Durée du cache</dt><dd>{{ settings.price_ttl_minutes }} min <span class="dd-note">(un cours plus récent n'est pas redemandé)</span></dd></div>
+      <div><dt>Badge « périmé »</dt><dd>au-delà de {{ settings.stale_after_hours }} h sans mise à jour</dd></div>
+      <div><dt>Actualisation automatique</dt><dd>{% if settings.background_refresh_hours > 0 %}toutes les {{ settings.background_refresh_hours | round(2) | string | replace(".0", "") | replace(".", ",") }} h, tant que l'application tourne{% else %}désactivée{% endif %}</dd></div>
+      <div><dt>Délai maximal par requête</dt><dd>{{ settings.http_timeout_seconds | round(1) | string | replace(".0", "") | replace(".", ",") }} s</dd></div>
+      <div><dt>Fuseau horaire</dt><dd>{{ settings.display_timezone }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="card" aria-labelledby="data-title">
+    <header class="card-header">
+      <h2 id="data-title" class="card-title">Vos données</h2>
+    </header>
+    <dl class="settings-list">
+      <div><dt>Base de données</dt><dd><code>{{ settings.database_url }}</code></dd></div>
+      <div><dt>Contenu</dt><dd>{{ transaction_count }} achat{{ "s" if transaction_count != 1 }}, {{ asset_count }} actif{{ "s" if asset_count != 1 }}</dd></div>
+    </dl>
+    <p class="settings-actions">
+      <a class="btn btn-primary" href="/export/transactions.csv" download>{{ icon("download") }}Exporter CSV</a>
+      <span class="hint">Tous les achats, au format CSV (dates ISO, point décimal).</span>
+    </p>
+  </section>
+</div>
+{% endblock %}

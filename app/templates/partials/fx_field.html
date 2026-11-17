@@ -1,0 +1,20 @@
+{# FX rate field of the purchase form. Rendered with the page and re-rendered by
+   GET /fragments/fx-rate when the currency or the date changes.
+   x-init copies the server-side rate into the Alpine state of the form. #}
+{% from "macros.html" import field_error %}
+<div class="field" x-init='fxRate = {{ fx_value | tojson }}; fxSource = {{ fx_source | tojson }}'>
+  <label for="fx_rate">Taux de change à l'achat <span class="label-note">1 EUR = ? {{ fx_currency }}</span></label>
+  <input id="fx_rate" name="fx_rate" type="text" inputmode="decimal" autocomplete="off"
+         x-model="fxRate" @input="fxSource = 'manual'" placeholder="ex. 1,0900"
+         aria-describedby="fx_rate-hint{% if errors.get('fx_rate') %} fx_rate-error{% endif %}"
+         {% if errors.get("fx_rate") %}aria-invalid="true"{% endif %}>
+  <input type="hidden" name="fx_source" :value="fxSource" value="{{ fx_source }}">
+  {{ field_error(errors, "fx_rate") }}
+  <p class="hint {{ 'hint-warn' if fx_failed }}" id="fx_rate-hint">
+    <span x-show="fxSource !== 'manual'">{{ fx_message }}</span>
+    <span x-show="fxSource === 'manual'" x-cloak>
+      {% if fx_failed or not fx_value %}{{ fx_message }}{% else %}Taux saisi à la main.{% endif %}
+      <button type="button" class="link-btn" @click="reloadFxRate()">Reprendre le taux du jour d'achat</button>
+    </span>
+  </p>
+</div>

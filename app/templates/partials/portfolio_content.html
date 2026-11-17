@@ -1,0 +1,262 @@
+{# The whole dashboard: KPI cards, allocation donut, positions table.
+   Rendered inside the portfolio page and returned as a fragment by the HTMX
+   endpoints that change data (refresh, delete a lot, manual price). #}
+{% from "macros.html" import icon, pl, pl_cell %}
+
+{% macro lot_actions(lot, asset) -%}
+<a class="icon-btn" href="/lots/{{ lot.id }}/edit" title="Modifier cet achat"
+   aria-label="Modifier l'achat du {{ lot.trade_date | date_fr }} ({{ asset.name }})">{{ icon("pencil") }}</a>
+<button type="button" class="icon-btn icon-btn-danger" title="Supprimer cet achat"
+        aria-label="Supprimer l'achat du {{ lot.trade_date | date_fr }} ({{ asset.name }})"
+        hx-delete="/lots/{{ lot.id }}" hx-target="#portfolio-content" hx-swap="outerHTML"
+        hx-confirm="Supprimer l'achat du {{ lot.trade_date | date_fr }} ({{ lot.quantity | qty }} × {{ asset.name }}) ?">{{ icon("trash") }}</button>
+{%- endmacro %}
+
+<div id="portfolio-content" class="portfolio" {% if oob %}hx-swap-oob="true"{% endif %}>
+{% if flash_error %}
+<p class="flash flash-error" role="alert">{{ icon("alert") }}{{ flash_error }}</p>
+{% endif %}
+
+{% if view.is_empty %}
+<section class="card empty-state">
+  <svg viewBox="0 0 96 96" width="96" height="96" aria-hidden="true">
+    <circle cx="48" cy="48" r="30" fill="none" stroke="var(--border-strong)" stroke-width="12"/>
+    <path d="M48 18a30 30 0 0 1 30 30" fill="none" stroke="var(--series-1)" stroke-width="12"/>
+  </svg>
+  <h2>Votre portefeuille est vide</h2>
+  <p>Ajoutez un premier achat pour suivre la valeur, la plus-value latente et la répartition de vos placements.</p>
+  <a class="btn btn-primary" href="/lots/new">{{ icon("plus") }}Ajouter un achat</a>
+</section>
+{% else %}
+{% set totals = view.totals %}
+
+<div class="toolbar" x-data>
+  <div class="segmented" role="group" aria-label="Unité des plus-values">
+    <button type="button" @click="$store.ui.setPlMode('eur')" :aria-pressed="$store.ui.plMode === 'eur'"
+            aria-pressed="true" title="Afficher les plus-values en euros">€</button>
+    <button type="button" @click="$store.ui.setPlMode('pct')" :aria-pressed="$store.ui.plMode === 'pct'"
+            aria-pressed="false" title="Afficher les plus-values en pourcentage">%</button>
+  </div>
+  {% if view.has_foreign %}
+  <label class="switch" title="Détaille, pour les actifs en devise, la performance locale et l'effet du taux de change">
+    <input type="checkbox" role="switch" :checked="$store.ui.fxEffect"
+           @change="$store.ui.setFxEffect($event.target.checked)">
+    <span class="switch-track" aria-hidden="true"></span>
+    <span>Effet de change</span>
+  </label>
+  {% endif %}
+</div>
+
+<section class="kpis" aria-label="Indicateurs clés">
+  <article class="card kpi kpi-main">
+    <h2 class="kpi-label">Valeur totale</h2>
+    <p class="kpi-value">{{ totals.value_eur | money }}</p>
+    <p class="kpi-sub">{{ view.positions | length }} position{{ "s" if view.positions | length > 1 }}</p>
+  </article>
+  <article class="card kpi">
+    <h2 class="kpi-label">Total investi</h2>
+    <p class="kpi-value">{{ totals.cost_eur | money }}</p>
+    <p class="kpi-sub">Frais d'achat inclus</p>
+  </article>
+  <article class="card kpi">
+    <h2 class="kpi-label">Plus-value latente <span class="kpi-label-note">(hors dividendes)</span></h2>
+    <p class="kpi-value">{{ pl(totals.pl_eur, totals.pl_pct) }}</p>
+    <p class="kpi-sub">
+      <span class="when-eur">soit {{ totals.pl_pct | pct(signed=true) }}</span>
+      <span class="when-pct">soit {{ totals.pl_eur | money(signed=true) }}</span>
+    </p>
+  </article>
+  {% if view.has_foreign %}
+  <article class="card kpi">
+    <h2 class="kpi-label">Effet de change total</h2>
+    <p class="kpi-value">{{ pl(totals.fx_effect_eur, totals.fx_effect_pct) }}</p>
+    <p class="kpi-sub">
+      <span class="when-eur">soit {{ totals.fx_effect_pct | pct(signed=true) }}</span>
+      <span class="when-pct">soit {{ totals.fx_effect_eur | money(signed=true) }}</span>
+      · inclus dans la plus-value
+    </p>
+  </article>
+  {% endif %}
+</section>
+
+<section class="card allocation" x-data="allocation" aria-labelledby="allocation-title">
+  <header class="card-header">
+    <h2 id="allocation-title" class="card-title">Répartition</h2>
+    <div class="segmented" role="group" aria-label="Répartition par">
+      {% for key, label in [("asset", "Par actif"), ("type", "Par type"), ("currency", "Par devise")] %}
+      <button type="button" @click="show('{{ key }}')" :aria-pressed="tab === '{{ key }}'"
+              aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+  </header>
+  <div class="allocation-body">
+    <div class="donut">
+      <canvas x-ref="canvas" role="img"
+              aria-label="Répartition de la valeur du portefeuille. Le détail figure dans le tableau voisin."></canvas>
+      <p class="donut-center"><span>Valeur totale</span><strong>{{ totals.value_eur | money }}</strong></p>
+    </div>
+    {% for key, slices in view.allocations.items() %}
+    <table class="legend" x-show="tab === '{{ key }}'" {% if not loop.first %}x-cloak{% endif %}>
+      <caption class="sr-only">Répartition de la valeur actuelle en euros</caption>
+      <thead class="sr-only"><tr><th scope="col">Catégorie</th><th scope="col">Part</th><th scope="col">Valeur</th></tr></thead>
+      <tbody>
+        {% for slice in slices %}
+        <tr @mouseenter="highlight({{ loop.index0 }})" @mouseleave="highlight(null)">
+          <th scope="row">
+            <span class="legend-entry">
+              <span class="swatch" style="background: var(--series-{{ slice.color_slot }})"></span>
+              <span class="legend-name" title="{{ slice.label }}">{{ slice.label }}</span>
+            </span>
+          </th>
+          <td>{{ slice.share | pct }}</td>
+          <td>{{ slice.value_eur | money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+  </div>
+  <script type="application/json" x-ref="data">{{ view.allocation_data | tojson }}</script>
+</section>
+
+<section class="card positions-card" aria-labelledby="positions-title">
+  <header class="card-header">
+    <h2 id="positions-title" class="card-title">Positions</h2>
+    <p class="card-note">Plus-value latente (hors dividendes)</p>
+  </header>
+  <table class="positions" id="positions-table">
+    <thead>
+      <tr>
+        <th scope="col" class="col-asset"><button type="button" class="sort" data-sort="name">Actif</button></th>
+        <th scope="col"><button type="button" class="sort" data-sort="quantity">Quantité</button></th>
+        <th scope="col"><button type="button" class="sort" data-sort="pru" title="Prix de revient unitaire en euros, frais inclus">PRU</button></th>
+        <th scope="col">Dernier cours</th>
+        <th scope="col" aria-sort="descending"><button type="button" class="sort" data-sort="value">Valeur</button></th>
+        <th scope="col"><button type="button" class="sort" data-sort="pl">Plus-value latente</button></th>
+        <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    {% for position in view.positions %}
+    {% set asset = position.asset %}
+    {% set result = position.result %}
+    <tbody class="position" data-name="{{ asset.name | lower }}" data-quantity="{{ result.quantity }}"
+           data-pru="{{ result.pru_eur }}" data-value="{{ result.value_eur }}"
+           data-pl-eur="{{ result.pl_eur }}" data-pl-pct="{{ result.pl_pct }}">
+      <tr class="position-row">
+        <td class="col-asset">
+          <div class="asset">
+            {% if position.has_several_lots %}
+            <button type="button" class="chevron" x-data
+                    @click="$store.ui.toggleAsset({{ asset.id }})"
+                    :aria-expanded="$store.ui.isOpen({{ asset.id }})" aria-expanded="false"
+                    aria-controls="lots-{{ asset.id }}"
+                    aria-label="Détail des {{ position.lots | length }} achats de {{ asset.name }}">{{ icon("chevron") }}</button>
+            {% else %}
+            <span class="chevron-spacer" aria-hidden="true"></span>
+            {% endif %}
+            <div class="asset-text">
+              <span class="asset-name">{{ asset.name }}</span>
+              <span class="asset-meta">
+                <span class="asset-codes">{{ asset.isin }}{% if asset.ticker %} · {{ asset.ticker }}{% endif %}</span>
+                <span class="badge" title="Devise de cotation">{{ asset.currency }}</span>
+                {% if position.has_several_lots %}
+                <span>{{ position.lots | length }} achats</span>
+                {% else %}
+                <span>Acheté le {{ position.lots[0].transaction.trade_date | date_fr }}</span>
+                {% endif %}
+              </span>
+            </div>
+          </div>
+        </td>
+        <td data-label="Quantité">{{ result.quantity | qty }}</td>
+        <td data-label="PRU">{{ result.pru_eur | money }}</td>
+        <td data-label="Dernier cours" class="col-price" {% if asset.manual_price %}x-data="{ editing: false }"{% endif %}>
+          {% if asset.manual_price %}
+          <div class="price-line" x-show="!editing">
+            <span>{{ position.last_price | money(asset.currency) }}</span>
+            <button type="button" class="icon-btn" title="Modifier le prix actuel"
+                    aria-label="Modifier le prix actuel de {{ asset.name }}"
+                    @click="editing = true; $nextTick(() => $refs.price.select())">{{ icon("pencil") }}</button>
+          </div>
+          <form class="price-form" x-show="editing" x-cloak
+                hx-post="/assets/{{ asset.id }}/price" hx-target="#portfolio-content" hx-swap="outerHTML"
+                @keydown.escape="editing = false">
+            <label class="sr-only" for="price-{{ asset.id }}">Prix actuel de {{ asset.name }} en {{ asset.currency }}</label>
+            <input id="price-{{ asset.id }}" name="price" x-ref="price" inputmode="decimal" autocomplete="off"
+                   required value="{{ position.last_price | input_number }}">
+            <button type="submit" class="icon-btn" title="Enregistrer" aria-label="Enregistrer le prix">{{ icon("check") }}</button>
+          </form>
+          {% else %}
+          <span>{{ position.last_price | money(asset.currency) }}</span>
+          {% endif %}
+          <span class="price-meta">
+            {% if asset.manual_price %}<span class="badge" title="Prix saisi à la main, pas de cours via API">manuel</span>{% endif %}
+            {% if position.price_updated_at %}
+            <time datetime="{{ position.price_updated_at.isoformat() }}Z" title="Mis à jour le {{ position.price_updated_at | datetime_fr }}">{{ position.price_updated_at | short_datetime }}</time>
+            {% endif %}
+            {% if position.is_stale %}
+            <span class="badge badge-warn has-tip" tabindex="0" data-tip="{{ position.warnings | join(' · ') }}">{{ icon("alert") }}périmé<span class="sr-only"> : {{ position.warnings | join(" ; ") }}</span></span>
+            {% endif %}
+          </span>
+        </td>
+        <td data-label="Valeur">{{ result.value_eur | money }}</td>
+        <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(result, position.is_foreign) }}</td>
+        <td class="col-actions">
+          <div class="actions">
+            <a class="icon-btn" href="/lots/new?asset_id={{ asset.id }}" title="Ajouter un achat de cet actif"
+               aria-label="Ajouter un achat de {{ asset.name }}">{{ icon("plus") }}</a>
+            {% if not position.has_several_lots %}{{ lot_actions(position.lots[0].transaction, asset) }}{% endif %}
+          </div>
+        </td>
+      </tr>
+      {% if position.has_several_lots %}
+      <tr class="lots-row" id="lots-{{ asset.id }}" x-data x-show="$store.ui.isOpen({{ asset.id }})" x-cloak>
+        <td colspan="7">
+          <table class="lots">
+            <caption class="sr-only">Achats de {{ asset.name }}</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="col-date">Date d'achat</th>
+                <th scope="col">Quantité</th>
+                <th scope="col">Prix unitaire</th>
+                <th scope="col" title="Unités de devise pour 1 EUR, au moment de l'achat">Taux à l'achat</th>
+                <th scope="col">Coût (EUR)</th>
+                <th scope="col">Valeur (EUR)</th>
+                <th scope="col">Plus-value latente</th>
+                <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for lot in position.lots %}
+              {% set transaction = lot.transaction %}
+              <tr>
+                <td data-label="Date d'achat" class="col-date">
+                  {{ transaction.trade_date | date_fr }}
+                  {% if transaction.broker %}<span class="lot-broker">{{ transaction.broker }}</span>{% endif %}
+                </td>
+                <td data-label="Quantité">{{ transaction.quantity | qty }}</td>
+                <td data-label="Prix unitaire">{{ transaction.unit_price | money(asset.currency) }}</td>
+                <td data-label="Taux à l'achat">
+                  {% if position.is_foreign and transaction.fx_rate %}
+                  <span title="1 EUR = {{ transaction.fx_rate | rate }} {{ asset.currency }}{% if transaction.fx_source == 'manual' %} (taux saisi){% endif %}">{{ transaction.fx_rate | rate }}</span>
+                  {% else %}
+                  <span aria-hidden="true">—</span><span class="sr-only">sans objet</span>
+                  {% endif %}
+                </td>
+                <td data-label="Coût (EUR)">{{ lot.result.cost_eur | money }}</td>
+                <td data-label="Valeur (EUR)">{{ lot.result.value_eur | money }}</td>
+                <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(lot.result, position.is_foreign) }}</td>
+                <td class="col-actions"><div class="actions">{{ lot_actions(transaction, asset) }}</div></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+</div>

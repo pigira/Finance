@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% from "macros.html" import icon, field_error %}
+{% set page_title = "Modifier un achat" if lot else "Ajouter un achat" %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block heading %}{{ page_title }}{% endblock %}
+
+{% macro describedby(name, hint=false) -%}
+{% if hint or errors.get(name) %}aria-describedby="{% if hint %}{{ name }}-hint{% endif %}{% if errors.get(name) %} {{ name }}-error{% endif %}"{% endif %}
+{% if errors.get(name) %} aria-invalid="true"{% endif %}
+{%- endmacro %}
+
+{% block content %}
+<form class="lot-form" method="post" action="{{ '/lots/%d' | format(lot.id) if lot else '/lots' }}" novalidate
+      x-data='lotForm({{ form_state | tojson }})'>
+
+  {% if errors %}
+  <p class="flash flash-error" role="alert">{{ icon("alert") }}L'achat n'a pas été enregistré : corrigez les champs signalés ci-dessous.</p>
+  {% endif %}
+
+  <section class="card form-section" aria-labelledby="asset-section-title">
+    <header class="card-header">
+      <h2 id="asset-section-title" class="card-title">Actif</h2>
+      {% if lot %}<p class="card-note">L'ISIN, la place et la devise d'un achat existant ne sont pas modifiables.</p>{% endif %}
+    </header>
+
+    <div class="form-grid">
+      <div class="field field-wide">
+        <label for="isin">ISIN</label>
+        <div class="input-row">
+          <input id="isin" name="isin" type="text" list="known-isins" maxlength="14" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false" placeholder="ex. IE00B4L5Y983"
+                 x-model="isin" @input="isin = isin.toUpperCase()" {% if lot %}readonly{% endif %}
+                 {{ describedby("isin", hint=true) }}>
+          {% if not lot %}
+          <button type="button" class="btn" hx-get="/fragments/listings" hx-include="#isin"
+                  hx-target="#listing-candidates" hx-indicator="#listing-search">
+            {{ icon("search") }}Rechercher la cotation
+          </button>
+          {% endif %}
+        </div>
+        {{ field_error(errors, "isin") }}
+        <p class="hint" id="isin-hint">12 caractères. Un même ISIN coté sur deux places donne deux actifs distincts.</p>
+        <datalist id="known-isins">
+          {% for asset in known_assets %}
+          <option value="{{ asset.isin }}">{{ asset.name }}{% if asset.exchange %} ({{ asset.exchange }}){% endif %}</option>
+          {% endfor %}
+        </datalist>
+
+        {% if not lot %}
+        <template x-if="matchingAssets.length > 0">
+          <div class="known-assets">
+            <p class="hint">Déjà dans votre portefeuille :</p>
+            <ul class="candidates">
+              <template x-for="asset in matchingAssets" :key="asset.isin + asset.exchange">
+                <li>
+                  <button type="button" class="candidate" @click="pickAsset(asset)"
+                          :aria-pressed="exchange === asset.exchange && name === asset.name">
+                    <span class="candidate-ticker" x-text="asset.ticker || 'Sans ticker'"></span>
+                    <span class="candidate-exchange" x-text="asset.exchange || 'Non coté'"></span>
+                    <span class="badge" x-text="asset.currency"></span>
+                    <span class="candidate-name" x-text="asset.name"></span>
+                  </button>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </template>
+
+        <div id="listing-search" class="listing-search">
+          <div class="skeleton-list" aria-hidden="true">
+            <span class="skeleton"></span><span class="skeleton"></span><span class="skeleton"></span>
+          </div>
+          <div id="listing-candidates" aria-live="polite"></div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="field field-wide">
+        <label for="name">Nom de l'actif</label>
+        <input id="name" name="name" type="text" maxlength="200" autocomplete="off" x-model="name"
+               {{ describedby("name") }}>
+        {{ field_error(errors, "name") }}
+      </div>
+
+      <div class="field">
+        <label for="asset_type">Type</label>
+        <select id="asset_type" name="asset_type" x-model="assetType" {{ describedby("asset_type") }}>
+          <option value="etf">ETF</option>
+          <option value="stock">Action</option>
+          <option value="fund">Fonds</option>
+        </select>
+        {{ field_error(errors, "asset_type") }}
+      </div>
+
+      <div class="field">
+        <label for="currency">Devise de cotation</label>
+        <input id="currency" name="currency" type="text" maxlength="3" autocomplete="off" spellcheck="false"
+               placeholder="EUR" x-model="currency" {% if lot %}readonly{% endif %}
+               {{ describedby("currency", hint=true) }}>
+        {{ field_error(errors, "currency") }}
+        <p class="hint" id="currency-hint">
+          <span x-show="!isMinorUnit">Code ISO : EUR, USD, GBP… Saisissez GBX pour une cotation en pence.</span>
+          <span x-show="isMinorUnit" x-cloak>Cotation en centièmes : saisissez quand même le prix unitaire et les frais dans l'unité principale (livres pour GBX).</span>
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="ticker">Ticker <span class="label-note">symbole Yahoo Finance</span></label>
+        <input id="ticker" name="ticker" type="text" maxlength="30" autocomplete="off" spellcheck="false"
+               placeholder="ex. IWDA.AS" x-model="ticker" :disabled="manualPrice"
+               {{ describedby("ticker") }}>
+        {{ field_error(errors, "ticker") }}
+      </div>
+
+      <div class="field">
+        <label for="exchange">Place de cotation <span class="label-note">code, ex. AMS</span></label>
+        <input id="exchange" name="exchange" type="text" maxlength="30" autocomplete="off" spellcheck="false"
+               x-model="exchange" {% if lot %}readonly{% endif %} {{ describedby("exchange") }}>
+        {{ field_error(errors, "exchange") }}
+      </div>
+
+      <div class="field field-wide">
+        <label class="checkbox">
+          <input type="checkbox" name="manual_price" x-model="manualPrice">
+          <span>Pas de cours via API (prix saisi à la main)</span>
+        </label>
+        <p class="hint">Pour un fonds non coté. Vous mettrez son prix à jour depuis le tableau des positions.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card form-section" aria-labelledby="lot-section-title">
+    <header class="card-header">
+      <h2 id="lot-section-title" class="card-title">Achat</h2>
+    </header>
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="trade_date">Date d'achat</label>
+        <div class="input-row date-row">
+          {# A text field, not <input type="date">: the latter follows the browser
+             language and would show mm/dd/yyyy in an English browser. #}
+          <input id="trade_date" name="trade_date" type="text" inputmode="numeric" maxlength="10"
+                 autocomplete="off" placeholder="jj/mm/aaaa" x-model="tradeDate"
+                 @input="tradeDate = maskDate(tradeDate)" {{ describedby("trade_date") }}>
+          <button type="button" class="btn btn-icon" title="Choisir dans un calendrier"
+                  aria-label="Choisir la date d'achat dans un calendrier" @click="openCalendar()">{{ icon("calendar") }}</button>
+          <input type="date" class="native-date" x-ref="calendar" tabindex="-1" aria-hidden="true"
+                 max="{{ today_iso }}" @change="tradeDate = isoToFrenchDate($event.target.value)">
+        </div>
+        {{ field_error(errors, "trade_date") }}
+      </div>
+
+      <div class="field">
+        <label for="quantity">Quantité</label>
+        <input id="quantity" name="quantity" type="text" inputmode="decimal" autocomplete="off"
+               placeholder="ex. 10 ou 0,25" x-model="quantity" {{ describedby("quantity") }}>
+        {{ field_error(errors, "quantity") }}
+      </div>
+
+      <div class="field">
+        <label for="unit_price">Prix unitaire <span class="label-note" x-text="'en ' + priceCurrency"></span></label>
+        <input id="unit_price" name="unit_price" type="text" inputmode="decimal" autocomplete="off"
+               placeholder="ex. 95,40" x-model="unitPrice" {{ describedby("unit_price") }}>
+        {{ field_error(errors, "unit_price") }}
+      </div>
+
+      <div class="field">
+        <label for="fees">Frais <span class="label-note" x-text="'en ' + priceCurrency + ', facultatif'"></span></label>
+        <input id="fees" name="fees" type="text" inputmode="decimal" autocomplete="off"
+               placeholder="0" x-model="fees" {{ describedby("fees") }}>
+        {{ field_error(errors, "fees") }}
+      </div>
+
+      <div id="fx-slot" class="fx-slot" x-show="isForeign" {% if values.get("currency", "EUR") | upper == "EUR" %}x-cloak{% endif %}
+           hx-get="/fragments/fx-rate" hx-trigger="fx-refresh delay:200ms"
+           hx-include="#currency, #trade_date" hx-target="this" hx-swap="innerHTML" hx-indicator="this">
+        {% if fx_currency %}{% include "partials/fx_field.html" %}{% endif %}
+      </div>
+
+      <div class="field">
+        <label for="broker">Courtier <span class="label-note">facultatif</span></label>
+        <input id="broker" name="broker" type="text" maxlength="100" autocomplete="off"
+               value="{{ values.get('broker', '') }}" {{ describedby("broker") }}>
+        {{ field_error(errors, "broker") }}
+      </div>
+    </div>
+
+    <p class="cost-summary" x-show="costLocal !== null" x-cloak aria-live="polite">
+      Coût total, frais inclus :
+      <strong x-text="formatMoney(costLocal, priceCurrency)"></strong>
+      <template x-if="isForeign && costEur !== null">
+        <span>soit environ <strong x-text="formatMoney(costEur, 'EUR')"></strong></span>
+      </template>
+    </p>
+  </section>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">{{ icon("check") }}{{ "Enregistrer les modifications" if lot else "Enregistrer l'achat" }}</button>
+    <a class="btn" href="/">Annuler</a>
+  </div>
+</form>
+{% endblock %}

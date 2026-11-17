@@ -1,0 +1,9 @@
+{# Top bar label. Also the swap target of the "Actualiser" button. #}
+<p id="last-refresh" class="last-refresh">
+  {% if last_refresh_at %}
+  <span class="last-refresh-label">Dernière mise à jour&nbsp;:</span>
+  <time datetime="{{ last_refresh_at.isoformat() }}Z" title="{{ last_refresh_at | datetime_fr }}">{{ last_refresh_at | short_datetime }}</time>
+  {% else %}
+  <span class="last-refresh-label">Aucune mise à jour</span>
+  {% endif %}
+</p>

@@ -1,0 +1,23 @@
+{# Answer to "Rechercher la cotation". Lives inside the lotForm Alpine component:
+   clicking a candidate calls its pickListing() method. #}
+{% from "macros.html" import icon %}
+{% if error %}
+<p class="notice notice-warn" role="status">{{ icon("alert") }}{{ error }}</p>
+{% elif not candidates %}
+<p class="notice" role="status">Aucune cotation trouvée pour {{ isin }}. Saisissez le ticker, la place et la devise à la main, ou cochez « Pas de cours via API ».</p>
+{% else %}
+<p class="hint" role="status">{{ candidates | length }} cotation{{ "s" if candidates | length > 1 }} trouvée{{ "s" if candidates | length > 1 }} pour {{ isin }}. Choisissez la place où vous avez acheté :</p>
+<ul class="candidates">
+  {% for candidate in candidates %}
+  <li>
+    <button type="button" class="candidate" @click='pickListing({{ candidate | tojson }})'
+            :aria-pressed="ticker === '{{ candidate.ticker }}' && exchange === '{{ candidate.exchange }}'">
+      <span class="candidate-ticker">{{ candidate.ticker }}</span>
+      <span class="candidate-exchange">{{ candidate.exchange_name }}</span>
+      <span class="badge">{{ candidate.currency or "devise ?" }}</span>
+      <span class="candidate-name">{{ candidate.name }}</span>
+    </button>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

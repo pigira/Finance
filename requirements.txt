@@ -1,0 +1,15 @@
+# Runtime
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+SQLAlchemy==2.1.9
+pydantic==2.14.3
+pydantic-settings==2.16.3
+httpx==0.28.1
+yfinance==1.8.0
+Jinja2==3.1.6
+python-multipart==0.0.34   # HTML form parsing for FastAPI
+tzdata==2026.6             # IANA time zones (needed by zoneinfo on Windows)
+
+# Development
+pytest==9.2.0
+ruff==0.17.5

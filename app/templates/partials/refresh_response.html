@@ -1,0 +1,4 @@
+{# Answer to POST /refresh: the new top bar label, plus the portfolio itself as
+   an out-of-band swap when the request came from the portfolio page. #}
+{% include "partials/last_refresh.html" %}
+{% if view %}{% include "partials/portfolio_content.html" %}{% endif %}

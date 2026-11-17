@@ -1,0 +1,68 @@
+{# Small reusable pieces of markup. #}
+
+{# Inline SVG icons (24x24, drawn with the current text colour). #}
+{% macro icon(name, class="") -%}
+<svg class="icon {{ class }}" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor"
+     stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  {%- if name == "portfolio" -%}
+  <path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>
+  {%- elif name == "plus" -%}
+  <path d="M12 5v14M5 12h14"/>
+  {%- elif name == "settings" -%}
+  <path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>
+  {%- elif name == "refresh" -%}
+  <path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18.5 3.5v4h-4M5.5 20.5v-4h4"/>
+  {%- elif name == "sun" -%}
+  <circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>
+  {%- elif name == "moon" -%}
+  <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>
+  {%- elif name == "chevron" -%}
+  <path d="M9 6l6 6-6 6"/>
+  {%- elif name == "pencil" -%}
+  <path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14.5 6.5l3 3"/>
+  {%- elif name == "trash" -%}
+  <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5L18 7M9 7V4.5h6V7"/>
+  {%- elif name == "download" -%}
+  <path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14"/>
+  {%- elif name == "search" -%}
+  <circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>
+  {%- elif name == "alert" -%}
+  <path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.2v.1"/>
+  {%- elif name == "calendar" -%}
+  <rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>
+  {%- elif name == "check" -%}
+  <path d="M5 12.5l4.5 4.5L19 7.5"/>
+  {%- endif -%}
+</svg>
+{%- endmacro %}
+
+{# A signed value with an arrow: direction is never conveyed by colour alone. #}
+{% macro delta(text, trend) -%}
+<span class="delta delta-{{ trend }}"><span class="delta-arrow" aria-hidden="true">{{ {"up": "▲", "down": "▼", "flat": "="}[trend] }}</span>{{ text }}</span>
+{%- endmacro %}
+
+{# A gain or loss in both units; CSS shows the one chosen with the "€ / %" toggle. #}
+{% macro pl(amount_eur, ratio) -%}
+<span class="when-eur">{{ delta(amount_eur | money(signed=true), amount_eur | trend) }}</span>
+<span class="when-pct">{{ delta(ratio | pct(signed=true), ratio | pct_trend) }}</span>
+{%- endmacro %}
+
+{# P/L cell of a row. `result` is a calc.LotResult or a calc.AssetResult.
+   Foreign-currency rows also carry the three-way split shown by "Effet de change". #}
+{% macro pl_cell(result, is_foreign) -%}
+{% if is_foreign %}
+<div class="when-fx-off">{{ pl(result.pl_eur, result.pl_pct) }}</div>
+<dl class="fx-breakdown when-fx-on">
+  <div><dt title="Gain en devise locale, converti au taux de change de l'achat">Perf. devise locale</dt><dd>{{ pl(result.pl_local_eur, result.local_perf) }}</dd></div>
+  <div><dt title="Part du gain due à la variation du taux de change depuis l'achat">Effet de change</dt><dd>{{ pl(result.fx_effect_eur, result.fx_effect) }}</dd></div>
+  <div class="fx-total"><dt>Total EUR</dt><dd>{{ pl(result.pl_eur, result.pl_pct) }}</dd></div>
+</dl>
+{% else %}
+{{ pl(result.pl_eur, result.pl_pct) }}
+{% endif %}
+{%- endmacro %}
+
+{# Error message under a form field. #}
+{% macro field_error(errors, name) -%}
+{% if errors.get(name) %}<p class="field-error" id="{{ name }}-error">{{ icon("alert") }}{{ errors[name] }}</p>{% endif %}
+{%- endmacro %}

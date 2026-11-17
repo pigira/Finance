@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Portefeuille{% endblock %}
+{% block heading %}Portefeuille{% endblock %}
+
+{% block content %}
+{% if view.refresh_is_due %}
+{# Prices are older than the cache TTL: show them now, refresh them in the background. #}
+<div hx-post="/refresh?auto=1" hx-trigger="load" hx-target="#last-refresh" hx-swap="outerHTML"
+     hx-indicator="#refresh-button, #portfolio-content"></div>
+{% endif %}
+{% include "partials/portfolio_content.html" %}
+{% endblock %}

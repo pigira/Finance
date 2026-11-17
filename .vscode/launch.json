@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Pécule: uvicorn (debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": ["app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+            "cwd": "${workspaceFolder}",
+            "envFile": "${workspaceFolder}/.env",
+            "jinja": true,
+            "justMyCode": true
+        },
+        {
+            "name": "Pécule: uvicorn (mock providers, offline)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": ["app.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"],
+            "cwd": "${workspaceFolder}",
+            "env": { "PRICE_PROVIDER": "mock" },
+            "jinja": true,
+            "justMyCode": true
+        },
+        {
+            "name": "Pécule: pytest",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["-q"],
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        }
+    ]
+}
