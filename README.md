@@ -43,6 +43,15 @@ with the debugger attached (`.vscode/launch.json`).
 
 ### Try it with demo data, offline
 
+One command on macOS or Linux (needs Python 3.11 or newer; it sets up `.venv`,
+the demo database and the server, and never touches `data/portfolio.db`):
+
+```bash
+./run_demo.sh
+```
+
+Then open <http://127.0.0.1:8000>. The manual steps are below.
+
 The mock providers return fixed prices, so no network is needed. Use a separate
 database file to keep the demo away from your real data:
 
