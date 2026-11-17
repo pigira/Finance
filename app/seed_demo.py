@@ -3,8 +3,8 @@
     PRICE_PROVIDER=mock python -m app.seed_demo
 
 Four assets covering every case the app handles: a USD stock with two lots,
-an Amsterdam-listed EUR ETF, a London ETF quoted in pence (GBX) and an
-unlisted fund whose price is typed by hand. With PRICE_PROVIDER=mock the
+an Amsterdam-listed EUR ETF, the same ETF bought in London where it is quoted
+in pence (GBX), and an unlisted fund whose price is typed by hand. With PRICE_PROVIDER=mock the
 resulting figures are exactly the reference values of the specification.
 
 The command refuses to run on a database that already contains purchases.
@@ -40,11 +40,10 @@ MSCI_WORLD = {
     "exchange": "AMS",
     "currency": "EUR",
 }
-ALL_WORLD_LONDON = {
-    "isin": "IE00BK5BQT80",
-    "name": "Vanguard FTSE All-World UCITS ETF USD (Acc)",
-    "asset_type": "etf",
-    "ticker": "VWRP.L",
+MSCI_WORLD_LONDON = {
+    # Same ISIN as above on another exchange: a distinct asset (other price, other currency).
+    **MSCI_WORLD,
+    "ticker": "SWDA.L",
     "exchange": "LSE",
     "currency": "GBX",  # quoted in pence: stored as GBP with price_scale 0.01
 }
@@ -87,7 +86,7 @@ DEMO_LOTS: list[dict[str, object]] = [
         "broker": "Courtier B",
     },
     {
-        **ALL_WORLD_LONDON,
+        **MSCI_WORLD_LONDON,
         "trade_date": date(2024, 11, 4),
         "quantity": 4,
         "unit_price": 78.40,

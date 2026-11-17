@@ -1,5 +1,7 @@
 """HTTP layer: pages, CRUD of lots, HTMX fragments, failure resilience."""
 
+from dataclasses import replace
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
@@ -269,8 +271,8 @@ def test_deleting_the_last_lot_keeps_the_asset_but_hides_it(
 def test_new_lot_form_can_be_prefilled_from_an_asset(client: TestClient) -> None:
     client.post("/lots", data=GBX_ETF_LOT)
     html = client.get("/lots/new?asset_id=1").text
-    assert "IE00BK5BQT80" in html
-    assert "VWRP.L" in html
+    assert "IE00B4L5Y983" in html
+    assert "SWDA.L" in html
     assert "GBX" in html  # a pence listing is shown as GBX in the form
 
 
@@ -287,6 +289,17 @@ def test_listing_search_fragment(client: TestClient) -> None:
 
     invalid = client.get("/fragments/listings", params={"isin": "IE00B4L5Y984"})
     assert "ISIN valide" in invalid.text
+
+
+def test_listings_found_by_name_only_are_flagged(client: TestClient, app: FastAPI) -> None:
+    class NameMatches(MockProvider):
+        def search(self, isin):
+            first, second, *_ = super().search(isin)
+            return [first, replace(second, isin_match=False)]
+
+    app.state.price_provider = NameMatches()
+    html = client.get("/fragments/listings", params={"isin": "IE00B4L5Y983"}).text
+    assert html.count("ISIN à vérifier") == 1
 
 
 def test_listing_search_survives_a_provider_failure(client: TestClient, app: FastAPI) -> None:

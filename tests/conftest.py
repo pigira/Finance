@@ -67,10 +67,11 @@ EUR_ETF_LOT = {
     "fees": "2,00",
 }
 GBX_ETF_LOT = {
-    "isin": "IE00BK5BQT80",
-    "name": "Vanguard FTSE All-World UCITS ETF USD (Acc)",
+    # The same ETF bought in London, where it is quoted in pence.
+    "isin": "IE00B4L5Y983",
+    "name": "iShares Core MSCI World UCITS ETF USD (Acc)",
     "asset_type": "etf",
-    "ticker": "VWRP.L",
+    "ticker": "SWDA.L",
     "exchange": "LSE",
     "currency": "GBX",
     "trade_date": "04/11/2024",

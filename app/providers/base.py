@@ -69,6 +69,9 @@ class Listing:
     price_scale: float
     name: str
     asset_type: str  # 'etf', 'stock' or 'fund'
+    # False when the listing was found through the asset's name rather than
+    # its ISIN: probably the same security on another exchange, to be checked.
+    isin_match: bool = True
 
 
 @dataclass(frozen=True)

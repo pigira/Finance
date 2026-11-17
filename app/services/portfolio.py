@@ -245,13 +245,22 @@ def _slices_by_asset(positions: list[PositionView], total: float) -> list[Alloca
     named = positions[:MAX_NAMED_SLICES]  # positions are already sorted by value
     others = positions[MAX_NAMED_SLICES:]
     slices = [
-        _slice(position.asset.name, position.result.value_eur, total, slot)
+        _slice(_legend_label(position, positions), position.result.value_eur, total, slot)
         for slot, position in enumerate(named, start=1)
     ]
     if others:
         others_value = sum(position.result.value_eur for position in others)
         slices.append(_slice(f"Autres ({len(others)})", others_value, total, OTHER_SLICE_COLOR))
     return slices
+
+
+def _legend_label(position: PositionView, positions: list[PositionView]) -> str:
+    """Asset name; with its ticker (or exchange) when another holding has the same name."""
+    asset = position.asset
+    same_name = [other for other in positions if other.asset.name == asset.name]
+    if len(same_name) == 1:
+        return asset.name
+    return f"{asset.name} ({asset.ticker or asset.exchange or asset.isin})"
 
 
 def _slices_by_type(positions: list[PositionView], total: float) -> list[AllocationSlice]:

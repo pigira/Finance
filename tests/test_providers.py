@@ -1,10 +1,12 @@
 """Price providers: mock determinism and the Yahoo adapter (yfinance is faked)."""
 
 from datetime import date
+from types import SimpleNamespace
 
 import httpx
 import pandas as pd
 import pytest
+from yfinance.scrapers.history import HistoryMetadata
 
 from app.providers import yahoo
 from app.providers.base import (
@@ -46,7 +48,7 @@ def test_mock_provider_is_deterministic() -> None:
 def test_mock_quotes_match_the_reference_values() -> None:
     provider = MockProvider()
     assert provider.get_quote("MSFT").price == 500.00
-    gbx_quote = provider.get_quote("VWRP.L")
+    gbx_quote = provider.get_quote("SWDA.L")
     assert (gbx_quote.price, gbx_quote.currency, gbx_quote.price_scale) == (8250.0, "GBP", 0.01)
 
 
@@ -70,25 +72,46 @@ def test_mock_fail_tickers_raise() -> None:
 
 # ---- Yahoo (yfinance replaced by fakes: no network) ----------------------------
 
-YAHOO_SEARCH_QUOTES = [
-    {
-        "symbol": "IWDA.AS",
-        "longname": "iShares Core MSCI World UCITS ETF USD (Acc)",
-        "exchange": "AMS",
-        "exchDisp": "Amsterdam",
-        "quoteType": "ETF",
-    },
-    {
-        "symbol": "SWDA.L",
-        "shortname": "ISHARES CORE MSCI WORLD",
-        "exchange": "LSE",
-        "exchDisp": "London",
-        "quoteType": "ETF",
-    },
-    {"shortname": "an entry without symbol is ignored"},
-]
+MSCI_WORLD_NAME = "iShares Core MSCI World UCITS ETF USD (Acc)"
+
+# As observed live: the ISIN finds one listing, the long name finds the others.
+YAHOO_SEARCH_ANSWERS = {
+    "IE00B4L5Y983": [
+        {
+            "symbol": "IWDA.L",
+            "longname": MSCI_WORLD_NAME,
+            "exchange": "LSE",
+            "exchDisp": "London",
+            "quoteType": "ETF",
+        },
+        {"shortname": "an entry without symbol is ignored"},
+    ],
+    MSCI_WORLD_NAME: [
+        {
+            "symbol": "IWDA.AS",
+            "longname": MSCI_WORLD_NAME,
+            "exchange": "AMS",
+            "exchDisp": "Amsterdam",
+            "quoteType": "ETF",
+        },
+        # Already found by ISIN: must not be listed twice.
+        {"symbol": "IWDA.L", "longname": MSCI_WORLD_NAME, "exchange": "LSE", "quoteType": "ETF"},
+        {
+            "symbol": "SWDA.L",
+            "longname": MSCI_WORLD_NAME,
+            "shortname": "ISHARES CORE MSCI WORLD",
+            "exchange": "LSE",
+            "exchDisp": "London",
+            "quoteType": "ETF",
+        },
+        # Other share class and other instrument type: not the same security.
+        {"symbol": "IWDE.AS", "longname": "iShares MSCI World EUR Hedged", "quoteType": "ETF"},
+        {"symbol": "IWDA.XX", "longname": MSCI_WORLD_NAME, "quoteType": "MUTUALFUND"},
+    ],
+}
 
 YAHOO_METADATA = {
+    "IWDA.L": {"currency": "USD", "regularMarketPrice": 112.3},
     "IWDA.AS": {"currency": "EUR", "regularMarketPrice": 95.4},
     "SWDA.L": {"currency": "GBp", "regularMarketPrice": 8075.0},
     "EURUSD=X": {"currency": "USD", "regularMarketPrice": 1.0875},
@@ -110,13 +133,26 @@ class FakeTicker:
         return pd.DataFrame({"Close": [1.0, 2.0, 3.0]}, index=index)
 
     @property
-    def history_metadata(self) -> dict:
-        return YAHOO_METADATA[self.symbol]
+    def history_metadata(self) -> HistoryMetadata:
+        # The real lazy mapping of yfinance, on top of fake data. Reading its
+        # "tradingPeriods" key would trigger a second network request: forbid it.
+        def no_extra_request() -> None:
+            raise AssertionError("tradingPeriods must not be loaded")
+
+        price_history = SimpleNamespace(
+            _history_metadata=YAHOO_METADATA[self.symbol],
+            _load_history_metadata_trading_periods=no_extra_request,
+        )
+        return HistoryMetadata(price_history)
 
 
 class FakeSearch:
+    queries: list[str] = []
+
     def __init__(self, query: str, **kwargs) -> None:
-        self.quotes = YAHOO_SEARCH_QUOTES
+        assert kwargs["timeout"] == 5.0
+        FakeSearch.queries.append(query)
+        self.quotes = YAHOO_SEARCH_ANSWERS.get(query, [])
 
 
 class FailingSearch:
@@ -126,6 +162,7 @@ class FailingSearch:
 
 @pytest.fixture
 def fake_yfinance(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeSearch.queries = []
     monkeypatch.setattr(yahoo.yf, "Ticker", FakeTicker)
     monkeypatch.setattr(yahoo.yf, "Search", FakeSearch)
 
@@ -137,36 +174,65 @@ def unreachable_http_client() -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_yahoo_search_lists_every_listing_with_its_currency(fake_yfinance: None) -> None:
+def test_yahoo_search_finds_the_isin_listing_then_other_exchanges_by_name(
+    fake_yfinance: None,
+) -> None:
     listings = YahooProvider(http_client=unreachable_http_client()).search("IE00B4L5Y983")
 
-    assert [listing.ticker for listing in listings] == ["IWDA.AS", "SWDA.L"]
-    amsterdam, london = listings
+    assert FakeSearch.queries == ["IE00B4L5Y983", MSCI_WORLD_NAME]
+    assert [(listing.ticker, listing.isin_match) for listing in listings] == [
+        ("IWDA.L", True),  # found by ISIN
+        ("IWDA.AS", False),  # same name on other exchanges: to be confirmed by the user
+        ("SWDA.L", False),
+    ]
+    london_usd, amsterdam, london_pence = listings
+    assert (london_usd.currency, london_usd.price_scale) == ("USD", 1.0)
     assert (amsterdam.exchange, amsterdam.exchange_name) == ("AMS", "Amsterdam")
     assert (amsterdam.currency, amsterdam.price_scale) == ("EUR", 1.0)
     assert amsterdam.asset_type == "etf"
-    assert amsterdam.name == "iShares Core MSCI World UCITS ETF USD (Acc)"
+    assert amsterdam.name == MSCI_WORLD_NAME
     # Quoted in pence by Yahoo ("GBp"): stored as GBP with a 0.01 scale.
-    assert (london.currency, london.price_scale) == ("GBP", 0.01)
-    assert london.name == "ISHARES CORE MSCI WORLD"
+    assert (london_pence.currency, london_pence.price_scale) == ("GBP", 0.01)
+
+
+def test_yahoo_search_of_an_unknown_isin_is_empty(fake_yfinance: None) -> None:
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"quotes": []}))
+    )
+    assert YahooProvider(http_client=client).search("ZZ000PECULE5") == []
 
 
 def test_yahoo_search_falls_back_to_the_http_endpoint(
     fake_yfinance: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(yahoo.yf, "Search", FailingSearch)
-    requested: list[httpx.URL] = []
+    requested: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        requested.append(request.url)
-        return httpx.Response(200, json={"quotes": YAHOO_SEARCH_QUOTES[:1]})
+        assert request.url.host == "query2.finance.yahoo.com"
+        requested.append(request.url.params["q"])
+        return httpx.Response(200, json={"quotes": YAHOO_SEARCH_ANSWERS["IE00B4L5Y983"]})
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     listings = YahooProvider(http_client=client).search("IE00B4L5Y983")
 
-    assert [listing.ticker for listing in listings] == ["IWDA.AS"]
-    assert requested[0].host == "query2.finance.yahoo.com"
-    assert requested[0].params["q"] == "IE00B4L5Y983"
+    assert [listing.ticker for listing in listings] == ["IWDA.L"]
+    assert requested == ["IE00B4L5Y983", MSCI_WORLD_NAME]
+
+
+def test_yahoo_name_search_failure_keeps_the_isin_listing(
+    fake_yfinance: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class SearchFailingOnNames(FakeSearch):
+        def __init__(self, query: str, **kwargs) -> None:
+            if query == MSCI_WORLD_NAME:
+                raise RuntimeError("rate limited")
+            super().__init__(query, **kwargs)
+
+    monkeypatch.setattr(yahoo.yf, "Search", SearchFailingOnNames)
+    client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(429)))
+    listings = YahooProvider(http_client=client).search("IE00B4L5Y983")
+    assert [listing.ticker for listing in listings] == ["IWDA.L"]
 
 
 def test_yahoo_search_failure_raises_provider_error(

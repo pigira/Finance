@@ -16,6 +16,9 @@
       <span class="candidate-exchange">{{ candidate.exchange_name }}</span>
       <span class="badge">{{ candidate.currency or "devise ?" }}</span>
       <span class="candidate-name">{{ candidate.name }}</span>
+      {% if not candidate.isin_match %}
+      <span class="candidate-note" title="Place trouvée d'après le nom de l'actif et non d'après son ISIN">même nom, ISIN à vérifier</span>
+      {% endif %}
     </button>
   </li>
   {% endfor %}

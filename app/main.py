@@ -88,7 +88,7 @@ async def _background_refresh_loop(app: FastAPI) -> None:
                 settings,
             )
             logger.info("background refresh: %s", report)
-        except Exception:  # noqa: BLE001 - the loop must survive any failure
+        except Exception:  # the loop must survive any failure
             logger.exception("background refresh failed")
 
 

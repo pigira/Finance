@@ -505,6 +505,7 @@ input:focus-visible, select:focus-visible { outline-offset: 0; border-color: var
 .candidate-ticker { min-width: 84px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .candidate-exchange { min-width: 96px; color: var(--text-2); }
 .candidate-name { flex: 1 1 200px; color: var(--muted); font-size: 0.8125rem; }
+.candidate-note { color: var(--warn); font-size: 0.75rem; white-space: nowrap; }
 
 .fx-slot.htmx-request input[type="text"] {
   color: transparent;

@@ -87,6 +87,7 @@ def listing_candidates(
                 "currency": quoted_currency_code(listing.currency, listing.price_scale),
                 "name": listing.name,
                 "asset_type": listing.asset_type,
+                "isin_match": listing.isin_match,
             }
             for listing in listings
         ]

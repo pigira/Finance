@@ -21,7 +21,7 @@ from app.providers.base import (
 from app.timeutil import utc_now
 
 _MSCI_WORLD = "iShares Core MSCI World UCITS ETF USD (Acc)"
-_FTSE_ALL_WORLD = "Vanguard FTSE All-World UCITS ETF USD (Acc)"
+_FTSE_ALL_WORLD = "Vanguard FTSE All-World UCITS ETF USD Accumulation"
 
 # ISIN -> listings. Currencies are spelled as an exchange would quote them.
 _LISTINGS: dict[str, list[tuple[str, str, str, str, str, str]]] = {
@@ -36,21 +36,21 @@ _LISTINGS: dict[str, list[tuple[str, str, str, str, str, str]]] = {
         ("EUNL.DE", "GER", "XETRA", "EUR", _MSCI_WORLD, "etf"),
     ],
     "IE00BK5BQT80": [
-        ("VWRP.L", "LSE", "London", "GBp", _FTSE_ALL_WORLD, "etf"),
         ("VWCE.DE", "GER", "XETRA", "EUR", _FTSE_ALL_WORLD, "etf"),
+        ("VWRA.L", "LSE", "London", "USD", _FTSE_ALL_WORLD, "etf"),
     ],
 }
 
 # ticker -> (raw price, quoted currency). The first three match the reference
-# vectors of the specification (MSFT 500 USD, EUR ETF 95, GBX quote 8250).
+# vectors of the specification (MSFT 500 USD, EUR ETF 95, pence quote 8250).
 _QUOTES: dict[str, tuple[float, str]] = {
     "MSFT": (500.00, "USD"),
     "IWDA.AS": (95.00, "EUR"),
-    "VWRP.L": (8250.0, "GBp"),
+    "SWDA.L": (8250.0, "GBp"),
     "MSF.DE": (454.55, "EUR"),
-    "SWDA.L": (8075.0, "GBp"),
     "EUNL.DE": (95.02, "EUR"),
-    "VWCE.DE": (97.06, "EUR"),
+    "VWCE.DE": (128.40, "EUR"),
+    "VWRA.L": (141.20, "USD"),
 }
 
 # Units of currency per 1 EUR "now".

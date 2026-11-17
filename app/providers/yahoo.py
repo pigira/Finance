@@ -1,9 +1,15 @@
 """Yahoo Finance providers (prices through yfinance, FX as a fallback source).
 
-ISIN lookup: yfinance resolves an ISIN with `yfinance.Search` (that is what
-`yfinance.Ticker("<ISIN>")` itself does internally, keeping only the first
-match). We call `Search` directly to get *every* listing. If that fails or
-returns nothing, we call Yahoo's public search endpoint with httpx.
+ISIN lookup, as observed against the live service (November 2026):
+
+* `yfinance.Search("<ISIN>")` works (it is what `yfinance.Ticker("<ISIN>")`
+  itself uses), but Yahoo usually answers with a single listing: IWDA.L (London,
+  USD) for IE00B4L5Y983, although the same ETF also trades in Amsterdam,
+  Frankfurt, Milan...
+* Searching for that listing's long name returns the other exchanges. Those
+  extra candidates are matched by name, not by ISIN, so they are flagged
+  (`Listing.isin_match = False`) and the user confirms the right one.
+* If yfinance's search fails, Yahoo's public search endpoint is called with httpx.
 
 The search answer has no currency, so each candidate is completed with one
 quote request. Yahoo spells a quote in pence "GBp": `normalize_currency`
@@ -48,29 +54,59 @@ class YahooProvider(PriceProvider):
     def __init__(self, timeout: float = 5.0, http_client: httpx.Client | None = None) -> None:
         self._timeout = timeout
         self._client = http_client or httpx.Client(timeout=timeout, headers=_BROWSER_HEADERS)
+        # By default yfinance prints errors and returns empty data. Make it
+        # raise instead, so that the real cause reaches the "stale" tooltip.
+        yf.config.debug.hide_exceptions = False
 
     # ---- search -----------------------------------------------------------
 
     def search(self, isin: str) -> list[Listing]:
-        raw_quotes = [raw for raw in self._search_raw(isin) if raw.get("symbol")][:MAX_CANDIDATES]
-        if not raw_quotes:
+        by_isin = [raw for raw in self._search_raw(isin) if raw.get("symbol")]
+        by_name = self._same_name_listings(by_isin)
+        known_symbols = {raw["symbol"] for raw in by_isin}
+        by_name = [raw for raw in by_name if raw["symbol"] not in known_symbols]
+
+        candidates = [(raw, True) for raw in by_isin] + [(raw, False) for raw in by_name]
+        candidates = candidates[:MAX_CANDIDATES]
+        if not candidates:
             return []
         # One quote request per candidate, in parallel, to learn its currency.
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            return list(pool.map(self._listing_from_search_result, raw_quotes))
+        with ThreadPoolExecutor(max_workers=MAX_CANDIDATES) as pool:
+            return list(pool.map(lambda item: self._to_listing(*item), candidates))
 
-    def _search_raw(self, isin: str) -> list[dict[str, Any]]:
+    def _search_raw(self, query: str) -> list[dict[str, Any]]:
         try:
-            quotes = self._search_with_yfinance(isin)
+            quotes = self._search_with_yfinance(query)
             if quotes:
                 return quotes
-        except Exception as exc:  # noqa: BLE001 - yfinance raises many unrelated types
-            logger.warning("yfinance.Search failed for %s (%s), trying httpx", isin, exc)
-        return self._search_with_httpx(isin)
+        except Exception as exc:  # yfinance raises many unrelated exception types
+            logger.warning("yfinance.Search failed for %r (%s), trying httpx", query, exc)
+        return self._search_with_httpx(query)
 
-    def _search_with_yfinance(self, isin: str) -> list[dict[str, Any]]:
+    def _same_name_listings(self, by_isin: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Other exchanges of the security found by ISIN: same long name, same type.
+
+        Best effort: any failure simply means "no extra candidate".
+        """
+        reference = next((raw for raw in by_isin if raw.get("longname")), None)
+        if reference is None:
+            return []
+        try:
+            results = self._search_raw(reference["longname"])
+        except ProviderError as exc:
+            logger.warning("name search failed for %r: %s", reference["longname"], exc)
+            return []
+        return [
+            raw
+            for raw in results
+            if raw.get("symbol")
+            and raw.get("longname") == reference["longname"]
+            and raw.get("quoteType") == reference.get("quoteType")
+        ]
+
+    def _search_with_yfinance(self, query: str) -> list[dict[str, Any]]:
         search = yf.Search(
-            isin,
+            query,
             max_results=MAX_CANDIDATES,
             news_count=0,
             lists_count=0,
@@ -79,16 +115,16 @@ class YahooProvider(PriceProvider):
         )
         return list(search.quotes)
 
-    def _search_with_httpx(self, isin: str) -> list[dict[str, Any]]:
-        params = {"q": isin, "quotesCount": MAX_CANDIDATES, "newsCount": 0, "listsCount": 0}
+    def _search_with_httpx(self, query: str) -> list[dict[str, Any]]:
+        params = {"q": query, "quotesCount": MAX_CANDIDATES, "newsCount": 0, "listsCount": 0}
         try:
             response = self._client.get(SEARCH_URL, params=params)
             response.raise_for_status()
             return list(response.json().get("quotes", []))
         except (httpx.HTTPError, ValueError) as exc:
-            raise ProviderError(f"Yahoo search failed for {isin}: {exc}") from exc
+            raise ProviderError(f"Yahoo search failed for {query!r}: {exc}") from exc
 
-    def _listing_from_search_result(self, raw: dict[str, Any]) -> Listing:
+    def _to_listing(self, raw: dict[str, Any], isin_match: bool) -> Listing:
         ticker = str(raw["symbol"])
         try:
             quote = self.get_quote(ticker)
@@ -105,6 +141,7 @@ class YahooProvider(PriceProvider):
             price_scale=price_scale,
             name=str(raw.get("longname") or raw.get("shortname") or ticker),
             asset_type=_ASSET_TYPES.get(str(raw.get("quoteType", "")).upper(), "stock"),
+            isin_match=isin_match,
         )
 
     # ---- quotes -----------------------------------------------------------
@@ -118,14 +155,16 @@ class YahooProvider(PriceProvider):
                 auto_adjust=False,
                 actions=False,
                 timeout=self._timeout,
-                raise_errors=True,
             )
-            # Filled by the history() call above: no second request.
-            metadata = dict(yf_ticker.history_metadata or {})
-        except Exception as exc:  # noqa: BLE001 - see _search_raw
+            # Filled by the history() call above: no second request. Read single
+            # keys only: this object is lazy, and copying it whole (dict(...))
+            # would fetch its "tradingPeriods" key with an extra, slow request.
+            metadata = yf_ticker.history_metadata
+            price = metadata.get("regularMarketPrice")
+            quote_currency = str(metadata.get("currency") or "")
+        except Exception as exc:  # same reason as in _search_raw
             raise ProviderError(f"Yahoo quote failed for {ticker}: {exc}") from exc
 
-        price = metadata.get("regularMarketPrice")
         if price is None:
             closes = history["Close"].dropna() if "Close" in history else []
             if len(closes) == 0:
@@ -136,7 +175,7 @@ class YahooProvider(PriceProvider):
         if not price > 0:  # also rejects NaN
             raise ProviderError(f"Yahoo returned an invalid price for {ticker}: {price}")
 
-        currency, price_scale = normalize_currency(str(metadata.get("currency") or ""))
+        currency, price_scale = normalize_currency(quote_currency)
         return Quote(ticker=ticker, price=price, currency=currency, price_scale=price_scale)
 
     def get_history(self, ticker: str, start: date, end: date) -> list[PricePoint]:
@@ -148,9 +187,8 @@ class YahooProvider(PriceProvider):
                 auto_adjust=False,
                 actions=False,
                 timeout=self._timeout,
-                raise_errors=True,
             )
-        except Exception as exc:  # noqa: BLE001 - see _search_raw
+        except Exception as exc:  # same reason as in _search_raw
             raise ProviderError(f"Yahoo history failed for {ticker}: {exc}") from exc
 
         if "Close" not in history:

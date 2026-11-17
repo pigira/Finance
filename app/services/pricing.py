@@ -244,7 +244,7 @@ def _fetch_quotes(provider: PriceProvider, tickers: list[str]) -> dict[str, Quot
             return provider.get_quote(ticker)
         except ProviderError as exc:
             return exc
-        except Exception as exc:  # noqa: BLE001 - a buggy provider must not break the page
+        except Exception as exc:  # a buggy provider must not break the page
             logger.exception("unexpected provider error for %s", ticker)
             return ProviderError(f"unexpected error: {exc}")
 
@@ -316,7 +316,7 @@ def _refresh_fx(
                 store_rate(session, quote, rate_date=today, fetched_at=now)
         except ProviderError as exc:
             error = str(exc)
-        except Exception as exc:  # noqa: BLE001 - same reason as in _fetch_quotes
+        except Exception as exc:  # same reason as in _fetch_quotes
             logger.exception("unexpected FX provider error for %s", currency)
             error = f"unexpected error: {exc}"
 

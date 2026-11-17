@@ -265,8 +265,8 @@ def test_portfolio_matches_the_reference_figures(
     assert msft.pru_eur == pytest.approx(376.35, abs=0.01)
 
     assert by_ticker["IWDA.AS"].result.pl_eur == pytest.approx(148.00, abs=0.01)
-    assert by_ticker["VWRP.L"].last_price == pytest.approx(82.50)
-    assert by_ticker["VWRP.L"].result.value_eur == pytest.approx(388.24, abs=0.01)
+    assert by_ticker["SWDA.L"].last_price == pytest.approx(82.50)
+    assert by_ticker["SWDA.L"].result.value_eur == pytest.approx(388.24, abs=0.01)
 
     # Default order: by value, largest first.
     values = [position.result.value_eur for position in view.positions]
@@ -278,6 +278,12 @@ def test_portfolio_matches_the_reference_figures(
     assert sum(shares) == pytest.approx(1.0)
     assert [item.label for item in view.allocations["currency"]][0] == "EUR"
     assert {item.label for item in view.allocations["type"]} == {"ETF", "Actions", "Fonds"}
+
+    # Two holdings share a name (same ETF on two exchanges): the legend tells them apart.
+    asset_labels = [item.label for item in view.allocations["asset"]]
+    assert "iShares Core MSCI World UCITS ETF USD (Acc) (IWDA.AS)" in asset_labels
+    assert "iShares Core MSCI World UCITS ETF USD (Acc) (SWDA.L)" in asset_labels
+    assert "Microsoft Corporation" in asset_labels
 
 
 def test_allocation_folds_small_holdings_into_others(
