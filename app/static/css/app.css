@@ -657,7 +657,12 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
 .chevron .icon { width: 16px; height: 16px; transition: transform 0.15s; }
 .chevron[aria-expanded="true"] .icon { transform: rotate(90deg); }
 
+.col-price { position: relative; }
 .col-price > span:first-child, .price-line > span { white-space: nowrap; }
+/* The "périmé" tooltip opens above the whole cell, so it never hides the price. */
+.col-price .has-tip { position: static; }
+.col-price .has-tip:hover::after,
+.col-price .has-tip:focus-visible::after { right: 12px; bottom: calc(100% - 8px); }
 .price-meta {
   display: flex;
   align-items: center;
@@ -715,10 +720,20 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
 
 /* ---------- 6. Responsive ---------- */
 
-/* Tablet: the positions table needs more room than the viewport offers. */
+/* Tablet: the positions table needs more room than the viewport offers, so it
+   scrolls sideways inside its card. "position: relative" makes the card the
+   reference of the visually hidden (absolutely positioned) labels inside the
+   table; without it they would stretch the page itself. */
 @media (max-width: 1100px) and (min-width: 761px) {
-  .positions-card { overflow-x: auto; }
+  .positions-card { position: relative; overflow-x: auto; }
   .positions { min-width: 860px; }
+}
+
+/* Narrow content: the legend moves under the donut. */
+@media (max-width: 1000px) {
+  .allocation-body { flex-direction: column; align-items: stretch; }
+  .donut { align-self: center; }
+  .legend { flex-basis: auto; max-width: none; }
 }
 
 /* Phone: bottom navigation, stacked cards instead of table rows. */
@@ -755,10 +770,8 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
   .kpi-value { font-size: 1.25rem; }
   .kpi-main .kpi-value { font-size: 1.75rem; }
 
-  .allocation-body { flex-direction: column; align-items: stretch; }
-  .donut { align-self: center; }
   /* Legend rows on two lines: the full name, then share and value under it. */
-  .legend { display: block; flex-basis: auto; max-width: none; }
+  .legend { display: block; }
   .legend tbody { display: block; }
   .legend tr { display: grid; grid-template-columns: auto 1fr; padding: 8px 0; border-bottom: 1px solid var(--border); }
   .legend tr:last-child { border-bottom: 0; }
@@ -807,7 +820,8 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
   .price-meta, .price-line, .price-form { justify-content: flex-start; }
   .fx-breakdown { min-width: 0; margin-left: 0; }
   .actions { justify-content: flex-start; margin: 0; padding-top: 8px; border-top: 1px solid var(--border); }
-  .has-tip:hover::after, .has-tip:focus-visible::after { right: auto; left: 0; }
+  .col-price .has-tip:hover::after,
+  .col-price .has-tip:focus-visible::after { right: auto; left: 0; bottom: calc(100% + 6px); }
 
   .lots-row { margin-top: 12px; }
   .lots { background: none; }

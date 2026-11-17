@@ -63,16 +63,20 @@ DateInput = Annotated[date, BeforeValidator(parse_date)]
 
 
 class LotForm(BaseModel):
-    """A purchase as submitted by the form, after validation."""
+    """A purchase as submitted by the form, after validation.
+
+    Field order matters: a validator can only look at the fields declared
+    before its own (through `info.data`), e.g. `ticker` needs `manual_price`.
+    """
 
     isin: str
     name: str
     asset_type: Literal["etf", "stock", "fund"]
+    manual_price: bool = False
     ticker: str = ""
     exchange: str = ""
-    currency: str  # typed "EUR", "usd", "GBX"...; stored as the ISO major unit
+    currency: str  # typed "EUR", "usd", "GBX"...; ends up as the ISO major unit
     price_scale: float = 1.0  # derived from `currency` (0.01 when typed in pence)
-    manual_price: bool = False
     trade_date: DateInput
     quantity: RequiredDecimal
     unit_price: RequiredDecimal
@@ -99,16 +103,31 @@ class LotForm(BaseModel):
             raise ValueError("Nom requis")
         return name[:200]
 
-    @field_validator("ticker", "exchange", mode="before")
-    @classmethod
-    def _upper(cls, value: Any) -> str:
-        return str(value or "").strip().upper()[:30]
-
     @field_validator("manual_price", mode="before")
     @classmethod
     def _checkbox(cls, value: Any) -> bool:
         # An unchecked HTML checkbox is simply absent from the posted form.
         return value in (True, "on", "true", "1")
+
+    @field_validator("ticker", "exchange", mode="before")
+    @classmethod
+    def _upper(cls, value: Any) -> str:
+        return str(value or "").strip().upper()[:30]
+
+    @field_validator("ticker")
+    @classmethod
+    def _ticker_unless_manual(cls, value: str, info: ValidationInfo) -> str:
+        if not value and not info.data.get("manual_price"):
+            raise ValueError("Ticker requis (ou cochez « Pas de cours via API »)")
+        return value
+
+    @field_validator("currency")
+    @classmethod
+    def _check_currency(cls, value: str) -> str:
+        iso_code, _scale = parse_currency_input(value)
+        if not is_iso_currency(iso_code):
+            raise ValueError("Devise invalide (code ISO à 3 lettres, ex. EUR)")
+        return value.strip()  # still as typed; normalized once everything is valid
 
     @field_validator("trade_date")
     @classmethod
@@ -134,63 +153,47 @@ class LotForm(BaseModel):
             raise ValueError("Ne peut pas être négatif")
         return value
 
+    @field_validator("fx_rate")
+    @classmethod
+    def _rate_for_foreign_currency(cls, value: float | None, info: ValidationInfo) -> float | None:
+        typed_currency = info.data.get("currency")
+        if typed_currency is None:
+            return value  # the currency itself is invalid: already reported
+        iso_code, _scale = parse_currency_input(typed_currency)
+        if iso_code != EUR and (value is None or value <= 0):
+            raise ValueError(f"Taux de change EUR/{iso_code} requis")
+        return value
+
     @field_validator("broker", mode="before")
     @classmethod
     def _broker(cls, value: Any) -> str | None:
         return str(value or "").strip()[:100] or None
 
     @model_validator(mode="after")
-    def _check_consistency(self) -> "LotForm":
-        self._normalize_currency()
+    def _normalize(self) -> "LotForm":
+        """Runs once every field is valid: derive the stored values."""
+        self.currency, self.price_scale = parse_currency_input(self.currency)
         if self.manual_price:
             # The owner types manual prices in the major unit: no pence scaling.
             self.price_scale = 1.0
-        elif not self.ticker:
-            raise _field_error("ticker", "Ticker requis (ou cochez « Pas de cours via API »)")
-        self._check_fx()
-        return self
 
-    def _normalize_currency(self) -> None:
-        iso_code, price_scale = parse_currency_input(self.currency)
-        if not is_iso_currency(iso_code):
-            raise _field_error("currency", "Devise invalide (code ISO à 3 lettres, ex. EUR)")
-        self.currency = iso_code
-        self.price_scale = price_scale
-
-    def _check_fx(self) -> None:
         if self.currency == EUR:
             self.fx_rate = None
             self.fx_source = None
-            return
-        if self.fx_rate is None or self.fx_rate <= 0:
-            raise _field_error("fx_rate", f"Taux de change EUR/{self.currency} requis")
-        if self.fx_source not in PROVIDER_FX_SOURCES:
+        elif self.fx_source not in PROVIDER_FX_SOURCES:
             self.fx_source = "manual"
-
-
-class _FieldError(ValueError):
-    """A validation error raised by the model validator for one specific field."""
-
-    def __init__(self, field: str, message: str) -> None:
-        super().__init__(message)
-        self.field = field
-
-
-def _field_error(field: str, message: str) -> _FieldError:
-    return _FieldError(field, message)
+        return self
 
 
 def french_errors(error: ValidationError) -> dict[str, str]:
     """Flatten a pydantic ValidationError into {field name: French message}."""
     messages: dict[str, str] = {}
     for item in error.errors():
-        original = item.get("ctx", {}).get("error")
-        if isinstance(original, _FieldError):
-            field = original.field
+        field = str(item["loc"][0]) if item["loc"] else "form"
+        if item["type"] == "value_error":
+            # Raised by one of the validators above: already a French sentence.
+            message = str(item["msg"]).removeprefix("Value error, ")
         else:
-            field = str(item["loc"][0]) if item["loc"] else "form"
-        message = str(item["msg"]).removeprefix("Value error, ")
-        if item["type"] != "value_error":
             message = "Valeur invalide ou manquante"
         messages.setdefault(field, message)
     return messages

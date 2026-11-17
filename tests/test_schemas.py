@@ -78,6 +78,17 @@ def test_ticker_is_required_unless_the_price_is_manual() -> None:
     assert manual.exchange == ""
 
 
+def test_every_error_is_reported_in_one_pass() -> None:
+    values = {
+        **MSFT_LOT_A,
+        "isin": "IE00B4L5Y984",
+        "ticker": "",
+        "quantity": "abc",
+        "fx_rate": "",
+    }
+    assert set(errors_of(values)) == {"isin", "ticker", "quantity", "fx_rate"}
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
