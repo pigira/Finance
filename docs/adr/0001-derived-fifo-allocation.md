@@ -1,0 +1,3 @@
+# FIFO allocation of Sales to Lots is derived, never stored
+
+Sales consume Lots oldest purchase first (FIFO). The allocation, the remaining quantity of each Lot and the Realized P/L are recomputed from an Asset's full ordered history on every read, and no `remaining_quantity` column exists. Editing or deleting any Sale or Lot therefore cannot leave stale allocations, and an edit that would make a past Sale exceed the open quantity at its date is refused. We chose FIFO over average cost (PMP) to keep per-Lot P/L and the purchase-date FX split meaningful, at the price of recomputing history and of rewriting every Realized P/L figure if the method ever changes.
