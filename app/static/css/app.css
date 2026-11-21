@@ -140,11 +140,10 @@ button, input, select { font: inherit; color: inherit; }
 :root[data-theme="light"] .only-dark,
 :root:not([data-theme="light"]) .only-light { display: none; }
 
-/* Display preferences: "€ / %" and "Effet de change" (see app.js). */
-/* "Par actif / Par compte": both tables are rendered, CSS shows the chosen one. */
+/* Display preferences: "€ / %", "Effet de change" and "Par actif / Par compte"
+   (see app.js). Both versions are rendered; CSS shows the chosen one. */
 :root[data-positions-view="envelope"] .view-by-asset,
 :root:not([data-positions-view="envelope"]) .view-by-envelope { display: none; }
-
 :root[data-pl-mode="pct"] .when-eur,
 :root:not([data-pl-mode="pct"]) .when-pct,
 :root[data-fx-effect="on"] .when-fx-off,
@@ -618,6 +617,21 @@ input:focus-visible, select:focus-visible { outline-offset: 0; border-color: var
 }
 .positions td { padding: 14px 12px; text-align: right; vertical-align: top; }
 .positions .col-asset, .lots .col-date { text-align: left; }
+
+/* "Par compte": a header row and a subtotal row frame each Envelope's Positions. */
+.positions .group-head th {
+  padding-top: 18px; text-align: left; font-weight: 650; border-bottom: 1px solid var(--border);
+  white-space: normal;
+}
+.positions .group-head .badge { margin-left: 6px; }
+.positions .subtotal-row th, .positions .subtotal-row td { font-weight: 650; border-top: 1px solid var(--border-strong); }
+/* The row header reads like a cell, not like a column header. */
+.positions .subtotal-row th {
+  border-bottom: 0; color: var(--text-2); font-size: 0.8125rem; padding-top: 14px;
+  vertical-align: top; white-space: normal;
+}
+.subtotal-note { display: block; margin-top: 2px; color: var(--muted); font-size: 0.75rem; font-weight: 500; }
+.asset-envelope { color: var(--text-2); }
 .positions th:first-child, .positions td:first-child { padding-left: 0; }
 .positions th:last-child, .positions td:last-child { padding-right: 0; }
 .position + .position > .position-row > td { border-top: 1px solid var(--border); }
@@ -828,6 +842,17 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
   .col-price .has-tip:focus-visible::after { right: auto; left: 0; bottom: calc(100% + 6px); }
 
   .lots-row { margin-top: 12px; }
+
+  /* "Par compte": the Envelope name heads its cards, the subtotal closes them as a card. */
+  .positions .group-head th { display: block; padding: 8px 0 !important; border-bottom: 0; }
+  .group-total { margin-bottom: 24px; }
+  .subtotal-row {
+    display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px;
+    padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: var(--radius);
+  }
+  .positions .subtotal-row th, .positions .subtotal-row td { padding: 0 !important; border-top: 0; }
+  .positions .subtotal-row th { display: block; grid-column: 1 / -1; }
+  .subtotal-row .subtotal-empty, .subtotal-row .col-actions { display: none !important; }
   .lots { background: none; }
   .lots thead { display: none; }
   .lots tbody tr {
@@ -854,12 +879,3 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
 .envelope-item .badge { margin-left: 6px; }
 .envelope-item .dd-note { display: block; margin-top: 2px; }
 
-/* ---- positions "Par compte" ---- */
-.positions .group-head th {
-  padding-top: 18px; text-align: left; font-weight: 650; border-bottom: 1px solid var(--border);
-}
-.positions .group-head .badge { margin-left: 6px; }
-.positions .subtotal-row th, .positions .subtotal-row td { font-weight: 650; border-top: 1px solid var(--border-strong); }
-/* The row header reads like a cell, not like a column header. */
-.positions .subtotal-row th { border-bottom: 0; color: var(--text-2); font-size: 0.8125rem; padding-top: 14px; vertical-align: top; }
-.asset-envelope { color: var(--text-2); }

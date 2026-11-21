@@ -86,7 +86,7 @@ class AllocationSlice:
 
 @dataclass
 class PortfolioView:
-    positions: list[PositionView]  # Consolidated positions ("Par actif" view)
+    consolidated_positions: list[PositionView]  # one per Asset ("Par actif" view)
     envelope_groups: list[EnvelopeGroupView]
     totals: calc.PortfolioResult
     allocations: dict[str, list[AllocationSlice]]
@@ -95,11 +95,11 @@ class PortfolioView:
 
     @property
     def is_empty(self) -> bool:
-        return not self.positions
+        return not self.consolidated_positions
 
     @property
     def has_foreign(self) -> bool:
-        return any(position.is_foreign for position in self.positions)
+        return any(position.is_foreign for position in self.consolidated_positions)
 
     @property
     def allocation_data(self) -> dict[str, list[dict[str, object]]]:
@@ -124,7 +124,7 @@ def build_portfolio(
     positions.sort(key=lambda position: position.result.value_eur, reverse=True)
 
     return PortfolioView(
-        positions=positions,
+        consolidated_positions=positions,
         envelope_groups=_build_envelope_groups(assets, position_of),
         totals=calc.compute_portfolio([position.result for position in positions]),
         allocations=_build_allocations(positions),
@@ -272,18 +272,20 @@ def _build_envelope_groups(
     assets: list[Asset], position_of: Callable[[Asset, list[Transaction]], PositionView]
 ) -> list[EnvelopeGroupView]:
     """One group per Envelope holding something; largest group and largest Position first."""
-    by_envelope: dict[int, tuple[Envelope, list[PositionView]]] = {}
+    envelopes: dict[int, Envelope] = {}
+    positions_by_envelope: dict[int, list[PositionView]] = {}
     for asset in assets:
         lots_by_envelope: dict[int, list[Transaction]] = {}
         for transaction in asset.transactions:  # kept in trade-date order
             lots_by_envelope.setdefault(transaction.envelope_id, []).append(transaction)
-        for transactions in lots_by_envelope.values():
-            envelope = transactions[0].envelope
-            group = by_envelope.setdefault(envelope.id, (envelope, []))
-            group[1].append(position_of(asset, transactions))
+        for envelope_id, transactions in lots_by_envelope.items():
+            envelopes[envelope_id] = transactions[0].envelope
+            positions = positions_by_envelope.setdefault(envelope_id, [])
+            positions.append(position_of(asset, transactions))
 
     groups = []
-    for envelope, positions in by_envelope.values():
+    for envelope_id, positions in positions_by_envelope.items():
+        envelope = envelopes[envelope_id]
         positions.sort(key=lambda position: position.result.value_eur, reverse=True)
         totals = calc.compute_portfolio([position.result for position in positions])
         groups.append(EnvelopeGroupView(envelope=envelope, positions=positions, totals=totals))

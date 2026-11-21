@@ -27,11 +27,12 @@
 {%- endmacro %}
 
 {# One <tbody> per row: the row itself plus its lot sub-rows. `row_key` names its
-   expand state and element ids; `group` is the envelope id in the "Par compte" table. #}
-{% macro position_body(position, row_key, show_envelope=true, group=none) -%}
+   expand state and element ids. `group` is the Envelope of the row in the "Par compte"
+   table (its header names it); in the "Par actif" table each row names its Envelopes. #}
+{% macro position_body(position, row_key, group=none) -%}
   {% set asset = position.asset %}
   {% set result = position.result %}
-  <tbody class="position" {% if group %}data-group="{{ group }}" {% endif %}data-name="{{ asset.name | lower }}" data-quantity="{{ result.quantity }}"
+  <tbody class="position" {% if group %}data-group="{{ group.id }}" {% endif %}data-name="{{ asset.name | lower }}" data-quantity="{{ result.quantity }}"
          data-pru="{{ result.pru_eur }}" data-value="{{ result.value_eur }}"
          data-pl-eur="{{ result.pl_eur }}" data-pl-pct="{{ result.pl_pct }}">
     <tr class="position-row">
@@ -39,7 +40,7 @@
         <div class="asset">
           {% if position.has_several_lots %}
           <button type="button" class="chevron" x-data
-                  @click="$store.ui.toggleAsset('{{ row_key }}')"
+                  @click="$store.ui.toggleRow('{{ row_key }}')"
                   :aria-expanded="$store.ui.isOpen('{{ row_key }}')" aria-expanded="false"
                   aria-controls="lots-{{ row_key }}"
                   aria-label="Détail des {{ position.lots | length }} achats de {{ asset.name }}">{{ icon("chevron") }}</button>
@@ -47,11 +48,11 @@
           <span class="chevron-spacer" aria-hidden="true"></span>
           {% endif %}
           <div class="asset-text">
-            <span class="asset-name">{{ asset.name }}</span>
+            <span class="asset-name">{% if group %}<span class="sr-only">{{ group.name }} : </span>{% endif %}{{ asset.name }}</span>
             <span class="asset-meta">
               <span class="asset-codes">{{ asset.isin }}{% if asset.ticker %} · {{ asset.ticker }}{% endif %}</span>
               <span class="badge" title="Devise de cotation">{{ asset.currency }}</span>
-              {% if show_envelope %}
+              {% if not group %}
               <span class="asset-envelope">{% if position.envelopes | length > 1 %}{{ position.envelopes | length }} comptes{% else %}{{ position.envelopes[0].name }}{% endif %}</span>
               {% endif %}
               {% if position.has_several_lots %}
@@ -127,7 +128,7 @@
             <tr>
               <td data-label="Date d'achat" class="col-date">
                 {{ transaction.trade_date | date_fr }}
-                {% if show_envelope %}<span class="lot-envelope">{{ transaction.envelope.name }}</span>{% endif %}
+                {% if not group %}<span class="lot-envelope">{{ transaction.envelope.name }}</span>{% endif %}
               </td>
               <td data-label="Quantité">{{ transaction.quantity | qty }}</td>
               <td data-label="Prix unitaire">{{ transaction.unit_price | money(asset.currency) }}</td>
@@ -191,7 +192,7 @@
   <article class="card kpi kpi-main">
     <h2 class="kpi-label">Valeur totale</h2>
     <p class="kpi-value">{{ totals.value_eur | money }}</p>
-    <p class="kpi-sub">{{ view.positions | length }} position{{ "s" if view.positions | length > 1 }}</p>
+    <p class="kpi-sub">{{ view.consolidated_positions | length }} position{{ "s" if view.consolidated_positions | length > 1 }}</p>
   </article>
   <article class="card kpi">
     <h2 class="kpi-label">Total investi</h2>
@@ -273,7 +274,7 @@
   </header>
   <table class="positions view-by-asset" id="positions-table">
     {{ positions_head() }}
-    {% for position in view.positions %}
+    {% for position in view.consolidated_positions %}
     {{ position_body(position, position.asset.id) }}
     {% endfor %}
   </table>
@@ -290,13 +291,16 @@
       </tr>
     </tbody>
     {% for position in group.positions %}
-    {{ position_body(position, "e%d-%d" | format(envelope.id, position.asset.id), show_envelope=false, group=envelope.id) }}
+    {{ position_body(position, "e%d-%d" | format(envelope.id, position.asset.id), group=envelope) }}
     {% endfor %}
     <tbody class="group-total" data-group="{{ envelope.id }}">
       <tr class="subtotal-row">
         <th scope="row" class="col-asset">Sous-total : {{ envelope.name }}</th>
         <td class="subtotal-empty" colspan="3"></td>
-        <td data-label="Valeur">{{ group.totals.value_eur | money }}</td>
+        <td data-label="Valeur">
+          {{ group.totals.value_eur | money }}
+          <span class="subtotal-note">investi {{ group.totals.cost_eur | money }}</span>
+        </td>
         <td data-label="Plus-value latente" class="col-pl">{{ pl(group.totals.pl_eur, group.totals.pl_pct) }}</td>
         <td class="col-actions"></td>
       </tr>

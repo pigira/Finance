@@ -136,8 +136,8 @@ def test_one_failing_ticker_does_not_affect_the_others(
     assert "timed out" in pricing.price_failures[1].message
 
     view = build_portfolio(session, settings, now=later)
-    msft = next(p for p in view.positions if p.asset.ticker == "MSFT")
-    etf = next(p for p in view.positions if p.asset.ticker == "IWDA.AS")
+    by_ticker = {position.asset.ticker: position for position in view.consolidated_positions}
+    msft, etf = by_ticker["MSFT"], by_ticker["IWDA.AS"]
     assert msft.last_price == 500.0
     assert msft.is_stale
     assert any("timed out" in warning for warning in msft.warnings)
@@ -147,7 +147,7 @@ def test_one_failing_ticker_does_not_affect_the_others(
     provider.failing = {}
     pricing.refresh_all(session, provider, fx, settings, force=True, now=later)
     assert pricing.price_failures == {}
-    assert not build_portfolio(session, settings, now=later).positions[0].is_stale
+    assert not build_portfolio(session, settings, now=later).consolidated_positions[0].is_stale
 
 
 def test_unexpected_provider_exception_is_contained(
@@ -191,7 +191,7 @@ def test_no_price_at_all_values_the_position_at_purchase_price(
     provider = ScriptedProvider({}, failing={"MSFT": ProviderError("down")})
     pricing.refresh_all(session, provider, MockFxProvider(), settings, now=NOON)
 
-    position = build_portfolio(session, settings, now=NOON).positions[0]
+    position = build_portfolio(session, settings, now=NOON).consolidated_positions[0]
     assert position.last_price == 400.0
     assert position.is_stale
     assert any("Aucun cours disponible" in warning for warning in position.warnings)
@@ -207,7 +207,7 @@ def test_fx_failure_keeps_the_page_working(session: Session, settings: Settings)
     report = pricing.refresh_all(session, provider, BrokenFx(), settings, now=NOON)
     assert (report.fx_updated, report.fx_failed) == (0, 1)
 
-    position = build_portfolio(session, settings, now=NOON).positions[0]
+    position = build_portfolio(session, settings, now=NOON).consolidated_positions[0]
     # No current rate: the purchase rate is used, so the FX effect is neutral.
     assert position.fx_rate_now == pytest.approx(1.09)
     assert position.result.fx_effect == pytest.approx(0.0)
@@ -230,7 +230,7 @@ def test_cached_purchase_date_rate_is_not_mistaken_for_the_current_rate(
     assert pricing.refresh_is_due(session, settings, now=NOON)
     report = pricing.refresh_all(session, provider, fx, settings, now=NOON)
     assert report.fx_updated == 1
-    position = build_portfolio(session, settings, now=NOON).positions[0]
+    position = build_portfolio(session, settings, now=NOON).consolidated_positions[0]
     assert position.fx_rate_now == pytest.approx(1.10)
     assert position.result.value_eur == pytest.approx(4545.45, abs=0.01)
     assert not position.is_stale
@@ -249,7 +249,7 @@ def test_old_cached_rate_used_as_a_last_resort_is_flagged(
         session, ScriptedProvider({"MSFT": usd_quote(500.0)}), BrokenFx(), settings, now=NOON
     )
 
-    position = build_portfolio(session, settings, now=NOON).positions[0]
+    position = build_portfolio(session, settings, now=NOON).consolidated_positions[0]
     assert position.is_stale
     assert any("Taux EUR/USD du 15/03/2024" in warning for warning in position.warnings)
 
@@ -274,7 +274,7 @@ def test_quote_unit_corrects_a_wrong_price_scale(session: Session, settings: Set
     pricing.refresh_all(session, MockProvider(), MockFxProvider(), settings, now=NOON)
 
     assert asset.price_scale == 0.01
-    position = build_portfolio(session, settings, now=NOON).positions[0]
+    position = build_portfolio(session, settings, now=NOON).consolidated_positions[0]
     assert position.last_price == pytest.approx(82.50)
     assert position.result.value_eur == pytest.approx(388.24, abs=0.01)
 
@@ -283,10 +283,12 @@ def test_price_older_than_a_day_is_flagged_stale(session: Session, settings: Set
     add_lot(session, settings, EUR_ETF_LOT)
     pricing.refresh_all(session, MockProvider(), MockFxProvider(), settings, now=NOON)
 
-    fresh = build_portfolio(session, settings, now=NOON + timedelta(hours=23)).positions[0]
+    fresh_view = build_portfolio(session, settings, now=NOON + timedelta(hours=23))
+    fresh = fresh_view.consolidated_positions[0]
     assert not fresh.is_stale
 
-    stale = build_portfolio(session, settings, now=NOON + timedelta(hours=25)).positions[0]
+    stale_view = build_portfolio(session, settings, now=NOON + timedelta(hours=25))
+    stale = stale_view.consolidated_positions[0]
     assert stale.is_stale
     assert "plus de 24 h" in stale.warnings[0]
     assert stale.last_price == 95.0  # the last known price is still shown
@@ -296,7 +298,7 @@ def test_portfolio_matches_the_reference_figures(
     demo_portfolio: None, session: Session, settings: Settings
 ) -> None:
     view = build_portfolio(session, settings)
-    by_ticker = {position.asset.ticker: position for position in view.positions}
+    by_ticker = {position.asset.ticker: position for position in view.consolidated_positions}
 
     msft = by_ticker["MSFT"].result
     assert msft.quantity == 15
@@ -310,7 +312,7 @@ def test_portfolio_matches_the_reference_figures(
     assert by_ticker["SWDA.L"].result.value_eur == pytest.approx(388.24, abs=0.01)
 
     # Default order: by value, largest first.
-    values = [position.result.value_eur for position in view.positions]
+    values = [position.result.value_eur for position in view.consolidated_positions]
     assert values == sorted(values, reverse=True)
 
     assert view.has_foreign
