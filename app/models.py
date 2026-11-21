@@ -54,6 +54,19 @@ class Envelope(Base):
     opening_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
+    # Cost properties, as typed: percentages (0.5 = 0.5 %) and EUR amounts.
+    # NULL is "not filled in": no such fee, or, for the exit tax, an unknown tax.
+    management_fee_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    custody_fee_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    custody_fee_per_position_eur: Mapped[float | None] = mapped_column(Float, nullable=True)
+    account_fee_eur: Mapped[float | None] = mapped_column(Float, nullable=True)
+    order_fee_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    order_fee_min_eur: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_fee_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_tax_rate_before_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_tax_threshold_years: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    exit_tax_rate_after_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="envelope")
 
 
@@ -84,6 +97,8 @@ class Asset(Base):
     price_scale: Mapped[float] = mapped_column(Float, default=1.0)
     # True: no API quote; the owner types the current price by hand.
     manual_price: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The Asset's own yearly fee (an ETF's TER), in percent. NULL: not filled in.
+    ongoing_charges_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="asset",

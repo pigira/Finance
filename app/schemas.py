@@ -75,6 +75,7 @@ class LotForm(BaseModel):
     name: str
     asset_type: Literal["etf", "stock", "fund"]
     manual_price: bool = False
+    ongoing_charges_pct: OptionalDecimal = None  # the Asset's own yearly fee (TER)
     ticker: str = ""
     exchange: str = ""
     currency: str  # typed "EUR", "usd", "GBX"...; ends up as the ISO major unit
@@ -110,6 +111,13 @@ class LotForm(BaseModel):
     def _checkbox(cls, value: Any) -> bool:
         # An unchecked HTML checkbox is simply absent from the posted form.
         return value in (True, "on", "true", "1")
+
+    @field_validator("ongoing_charges_pct")
+    @classmethod
+    def _ongoing_charges(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 100:
+            raise ValueError("Entre 0 et 100 %")
+        return value
 
     @field_validator("ticker", "exchange", mode="before")
     @classmethod
@@ -197,6 +205,17 @@ class EnvelopeForm(BaseModel):
     envelope_type: Literal[ENVELOPE_TYPES]
     broker: str | None = None
     opening_date: OptionalDate = None
+    # Cost properties: percentages as typed (0,5 = 0.5 %), amounts in EUR, empty = None.
+    management_fee_pct: OptionalDecimal = None
+    custody_fee_pct: OptionalDecimal = None
+    custody_fee_per_position_eur: OptionalDecimal = None
+    account_fee_eur: OptionalDecimal = None
+    order_fee_pct: OptionalDecimal = None
+    order_fee_min_eur: OptionalDecimal = None
+    entry_fee_pct: OptionalDecimal = None
+    exit_tax_rate_before_pct: OptionalDecimal = None
+    exit_tax_threshold_years: OptionalDecimal = None
+    exit_tax_rate_after_pct: OptionalDecimal = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -218,6 +237,49 @@ class EnvelopeForm(BaseModel):
         if value is not None and value > today:
             raise ValueError("La date d'ouverture ne peut pas être dans le futur")
         return value
+
+    @field_validator(
+        "management_fee_pct",
+        "custody_fee_pct",
+        "order_fee_pct",
+        "entry_fee_pct",
+        "exit_tax_rate_before_pct",
+        "exit_tax_rate_after_pct",
+    )
+    @classmethod
+    def _percentage(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 100:
+            raise ValueError("Entre 0 et 100 %")
+        return value
+
+    @field_validator("custody_fee_per_position_eur", "account_fee_eur", "order_fee_min_eur")
+    @classmethod
+    def _amount(cls, value: float | None) -> float | None:
+        if value is not None and value < 0:
+            raise ValueError("Ne peut pas être négatif")
+        return value
+
+    @field_validator("exit_tax_threshold_years")
+    @classmethod
+    def _whole_years(cls, value: float | None) -> float | None:
+        if value is not None and (value != int(value) or not 1 <= value <= 30):
+            raise ValueError("Nombre entier d'années, de 1 à 30")
+        return value
+
+    @model_validator(mode="after")
+    def _exit_tax_shape(self) -> "EnvelopeForm":
+        """No exit tax, a single rate, or a rate before and after a threshold."""
+        filled = (
+            self.exit_tax_rate_before_pct is not None,
+            self.exit_tax_threshold_years is not None,
+            self.exit_tax_rate_after_pct is not None,
+        )
+        if filled not in ((False, False, False), (True, False, False), (True, True, True)):
+            raise ValueError(
+                "Fiscalité incomplète : un seul taux, ou un taux, un seuil et un taux après "
+                "le seuil."
+            )
+        return self
 
 
 def french_errors(error: ValidationError) -> dict[str, str]:

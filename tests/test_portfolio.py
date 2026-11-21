@@ -1,5 +1,7 @@
 """The portfolio view: Consolidated positions, and Positions grouped by Envelope."""
 
+from datetime import date, datetime
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -8,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings
 from app.formatting import NBSP, NNBSP
 from app.schemas import EnvelopeForm
-from app.services import envelopes, pricing
+from app.services import envelopes, lots, pricing
 from app.services.portfolio import build_portfolio
 from tests.conftest import EUR_ETF_LOT, MSFT_LOT_A, MSFT_LOT_B, add_lot
 
@@ -69,6 +71,75 @@ def test_a_consolidated_position_sums_its_envelopes_and_names_them(
     assert msft.result.pl_eur == pytest.approx(1172.98, abs=0.01)
     assert [envelope.name for envelope in msft.envelopes] == ["CTO Courtier A", "CTO Courtier B"]
     assert [envelope.name for envelope in etf.envelopes] == ["CTO Courtier A"]
+
+
+@pytest.fixture
+def cto_a_with_costs(two_ctos: None, session: Session) -> None:
+    """CTO Courtier A charges an order fee and custody, and its gains are taxed at 31.4 %.
+    CTO Courtier B has no cost property at all; the ETF has 0.20 % ongoing charges."""
+    cto_a = next(e for e in envelopes.all_envelopes(session) if e.name == "CTO Courtier A")
+    cto_a.order_fee_pct, cto_a.order_fee_min_eur = 0.5, 2.0
+    cto_a.custody_fee_per_position_eur = 3.0
+    cto_a.exit_tax_rate_before_pct = 31.4
+    etf = next(a for a in lots.all_assets(session) if a.ticker == "IWDA.AS")
+    etf.ongoing_charges_pct = 0.20
+    session.commit()
+
+
+def test_estimated_costs_of_positions_envelopes_and_portfolio(
+    cto_a_with_costs: None, session: Session, settings: Settings
+) -> None:
+    view = build_portfolio(session, settings)
+    cto_a, cto_b = view.envelope_groups
+    msft_in_a, etf = cto_a.positions
+
+    # MSFT lot A: value 4 545.45, cost 3 670.64. Order fee 0.5 % = 22.73, custody 3 per line.
+    # ETF: value 950.00, cost 802.00. Order fee 4.75; custody 3 + 0.20 % of 950 = 4.90.
+    # Taxable 852.09 + 143.25 = 995.33, x 31.4 % = 312.54, split 267.55 / 44.98.
+    assert msft_in_a.costs.annual_cost_eur == pytest.approx(3.00, abs=0.01)
+    assert msft_in_a.costs.order_fee_eur == pytest.approx(22.73, abs=0.01)
+    assert msft_in_a.costs.exit_tax_eur == pytest.approx(267.55, abs=0.01)
+    assert msft_in_a.costs.exit_cost_eur == pytest.approx(22.73 + 267.55, abs=0.01)
+    assert etf.costs.annual_cost_eur == pytest.approx(4.90, abs=0.01)
+    assert etf.costs.exit_tax_eur == pytest.approx(44.98, abs=0.01)
+    assert cto_a.costs.annual_cost_eur == pytest.approx(7.90, abs=0.01)
+    assert cto_a.costs.exit_cost_eur == pytest.approx(340.01, abs=0.01)
+
+    # CTO Courtier B: no fee, and its tax is unknown, not zero.
+    assert cto_b.costs.annual_cost_eur == 0
+    assert cto_b.costs.exit_tax_eur is None
+
+    # A Consolidated position, and the portfolio, add up their parts; one unknown tax
+    # makes the total exit cost unknown too.
+    msft = view.consolidated_positions[0]
+    assert msft.costs.annual_cost_eur == pytest.approx(3.00, abs=0.01)
+    assert msft.costs.exit_cost_eur is None
+    assert view.costs.annual_cost_eur == pytest.approx(7.90, abs=0.01)
+    assert view.costs.exit_cost_eur is None
+
+
+def test_the_oldest_purchase_dates_an_envelope_without_opening_date(
+    app: FastAPI, session: Session, settings: Settings
+) -> None:
+    pea = envelopes.create_envelope(session, EnvelopeForm(name="PEA", envelope_type="pea"))
+    pea.exit_tax_rate_before_pct, pea.exit_tax_threshold_years = 31.4, 5
+    pea.exit_tax_rate_after_pct = 18.6
+    session.commit()
+    add_lot(
+        session, settings, {**EUR_ETF_LOT, "envelope_id": str(pea.id), "trade_date": "10/01/2021"}
+    )
+    pricing.refresh_all(session, app.state.price_provider, app.state.fx_provider, settings)
+    today = datetime(2026, 11, 21, 11, 0)
+
+    # Bought on 10/01/2021: more than 5 years ago, so 18.6 % of the 148.00 gain.
+    (group,) = build_portfolio(session, settings, now=today).envelope_groups
+    assert group.costs.exit_tax_eur == pytest.approx(27.53, abs=0.01)
+
+    # An opening date typed in wins: opened 01/06/2022, not 5 years yet, 31.4 %.
+    pea.opening_date = date(2022, 6, 1)
+    session.commit()
+    (group,) = build_portfolio(session, settings, now=today).envelope_groups
+    assert group.costs.exit_tax_eur == pytest.approx(46.47, abs=0.01)
 
 
 # ---- the dashboard ----------------------------------------------------------------

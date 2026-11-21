@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.db import get_session
-from app.formatting import format_date
+from app.formatting import format_date, format_input_number
 from app.models import Asset, Envelope, Transaction
 from app.schemas import EnvelopeForm, french_errors
 from app.services import envelopes
@@ -35,8 +35,13 @@ def settings_page(request: Request, session: Session = Depends(get_session)) -> 
 
 
 @router.get("/settings/envelopes/new", response_class=HTMLResponse)
-def new_envelope_page(request: Request, session: Session = Depends(get_session)) -> HTMLResponse:
-    return _render_form(request, session, values={"envelope_type": "cto"})
+def new_envelope_page(
+    request: Request, envelope_type: str = "cto", session: Session = Depends(get_session)
+) -> HTMLResponse:
+    """Empty form, prefilled with the defaults of the type (?envelope_type=pea...)."""
+    if envelope_type not in envelopes.ENVELOPE_TYPE_LABELS:
+        envelope_type = "cto"
+    return _render_form(request, session, values=_default_values(envelope_type))
 
 
 @router.get("/settings/envelopes/{envelope_id}/edit", response_class=HTMLResponse)
@@ -88,6 +93,13 @@ def update_envelope(
     return RedirectResponse("/settings", status_code=303)
 
 
+@router.post("/settings/envelopes/{envelope_id}/defaults")
+def reapply_defaults(envelope_id: int, session: Session = Depends(get_session)):
+    """The "Réappliquer les valeurs par défaut" button: the exit tax of its type."""
+    envelopes.reapply_defaults(session, _get_envelope_or_404(session, envelope_id))
+    return RedirectResponse(f"/settings/envelopes/{envelope_id}/edit", status_code=303)
+
+
 @router.post("/settings/envelopes/{envelope_id}/delete", response_class=HTMLResponse)
 def delete_envelope(
     request: Request, envelope_id: int, session: Session = Depends(get_session)
@@ -123,6 +135,16 @@ def _envelope_values(envelope: Envelope) -> dict[str, str]:
         "envelope_type": envelope.envelope_type,
         "broker": envelope.broker or "",
         "opening_date": format_date(envelope.opening_date) if envelope.opening_date else "",
+        **{name: format_input_number(getattr(envelope, name)) for name in envelopes.COST_FIELDS},
+    }
+
+
+def _default_values(envelope_type: str) -> dict[str, str]:
+    """Form values suggested by an envelope type; the other cost fields stay empty."""
+    defaults = envelopes.TYPE_DEFAULTS[envelope_type]
+    return {
+        "envelope_type": envelope_type,
+        **{name: format_input_number(defaults.get(name)) for name in envelopes.TAX_FIELDS},
     }
 
 
@@ -140,6 +162,7 @@ def _render_settings(
         transaction_count=session.scalar(select(func.count()).select_from(Transaction)),
         envelopes=envelopes.all_envelopes(session),
         envelope_types=envelopes.ENVELOPE_TYPE_LABELS,
+        effective_opening_date=envelopes.effective_opening_date,
         envelope_error=envelope_error,
     )
     return render(request, "settings.html", context, status_code=422 if envelope_error else 200)
@@ -161,5 +184,7 @@ def _render_form(
         errors=errors or {},
         envelope=envelope,
         envelope_types=envelopes.ENVELOPE_TYPE_LABELS,
+        defaults_as_of=envelopes.DEFAULTS_AS_OF,
+        tax_defaults={code: _default_values(code) for code in envelopes.ENVELOPE_TYPE_LABELS},
     )
     return render(request, "envelope_form.html", context, status_code=422 if errors else 200)

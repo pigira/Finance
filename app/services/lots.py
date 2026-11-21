@@ -35,6 +35,7 @@ def create_lot(session: Session, form: LotForm, settings: Settings) -> Transacti
             asset_type=form.asset_type,
             ticker=form.ticker or None,
             manual_price=form.manual_price,
+            ongoing_charges_pct=form.ongoing_charges_pct,
         )
         session.add(asset)
     else:
@@ -100,6 +101,7 @@ def _apply_asset_fields(session: Session, asset: Asset, form: LotForm, settings:
     asset.name = form.name
     asset.asset_type = form.asset_type
     asset.ticker = form.ticker or None
+    asset.ongoing_charges_pct = form.ongoing_charges_pct
 
     becomes_manual = form.manual_price and not asset.manual_price
     asset.manual_price = form.manual_price

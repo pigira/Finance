@@ -6,7 +6,7 @@ rendering the page stays fast and cannot fail because of the network.
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,9 @@ from app.calc import EUR
 from app.config import Settings
 from app.formatting import format_date, format_datetime
 from app.models import Asset, Envelope, FxRate, PriceHistory, Transaction
-from app.services import pricing
+from app.services import envelopes, pricing
 from app.services.fx import rate_reference_time
-from app.timeutil import utc_now
+from app.timeutil import local_today, utc_now
 
 ASSET_TYPE_LABELS = {"etf": "ETF", "stock": "Actions", "fund": "Fonds"}
 
@@ -47,6 +47,8 @@ class PositionView:
     fx_rate_now: float
     # Reasons why the valuation may be out of date. Empty = all good.
     warnings: list[str] = field(default_factory=list)
+    # Estimated costs, set once every Position of its Envelope is known.
+    costs: calc.CostEstimate | None = None
 
     @property
     def is_foreign(self) -> bool:
@@ -74,6 +76,7 @@ class EnvelopeGroupView:
     envelope: Envelope
     positions: list[PositionView]
     totals: calc.PortfolioResult
+    costs: calc.CostEstimate
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,7 @@ class PortfolioView:
     consolidated_positions: list[PositionView]  # one per Asset ("Par actif" view)
     envelope_groups: list[EnvelopeGroupView]
     totals: calc.PortfolioResult
+    costs: calc.CostEstimate
     allocations: dict[str, list[AllocationSlice]]
     last_refresh_at: datetime | None
     refresh_is_due: bool
@@ -122,11 +126,23 @@ def build_portfolio(
 
     positions = [position_of(asset, asset.transactions) for asset in assets]
     positions.sort(key=lambda position: position.result.value_eur, reverse=True)
+    groups = _build_envelope_groups(
+        assets, position_of, local_today(settings.display_timezone, now)
+    )
+
+    # A Consolidated position costs what its Positions cost, in every Envelope.
+    costs_by_asset: dict[int, list[calc.CostEstimate]] = {}
+    for group in groups:
+        for position in group.positions:
+            costs_by_asset.setdefault(position.asset.id, []).append(position.costs)
+    for position in positions:
+        position.costs = calc.add_up_costs(costs_by_asset[position.asset.id])
 
     return PortfolioView(
         consolidated_positions=positions,
-        envelope_groups=_build_envelope_groups(assets, position_of),
+        envelope_groups=groups,
         totals=calc.compute_portfolio([position.result for position in positions]),
+        costs=calc.add_up_costs([group.costs for group in groups]),
         allocations=_build_allocations(positions),
         last_refresh_at=_last_refresh_at(prices, rates, settings.display_timezone),
         refresh_is_due=pricing.refresh_is_due(session, settings, now),
@@ -269,26 +285,50 @@ def _current_fx_rate(
 
 
 def _build_envelope_groups(
-    assets: list[Asset], position_of: Callable[[Asset, list[Transaction]], PositionView]
+    assets: list[Asset],
+    position_of: Callable[[Asset, list[Transaction]], PositionView],
+    today: date,
 ) -> list[EnvelopeGroupView]:
-    """One group per Envelope holding something; largest group and largest Position first."""
-    envelopes: dict[int, Envelope] = {}
+    """One group per Envelope holding something; largest group and largest Position first.
+    Each Position gets its estimated costs, which depend on the whole Envelope."""
+    envelope_by_id: dict[int, Envelope] = {}
     positions_by_envelope: dict[int, list[PositionView]] = {}
     for asset in assets:
         lots_by_envelope: dict[int, list[Transaction]] = {}
         for transaction in asset.transactions:  # kept in trade-date order
             lots_by_envelope.setdefault(transaction.envelope_id, []).append(transaction)
         for envelope_id, transactions in lots_by_envelope.items():
-            envelopes[envelope_id] = transactions[0].envelope
+            envelope_by_id[envelope_id] = transactions[0].envelope
             positions = positions_by_envelope.setdefault(envelope_id, [])
             positions.append(position_of(asset, transactions))
 
     groups = []
     for envelope_id, positions in positions_by_envelope.items():
-        envelope = envelopes[envelope_id]
+        envelope = envelope_by_id[envelope_id]
         positions.sort(key=lambda position: position.result.value_eur, reverse=True)
         totals = calc.compute_portfolio([position.result for position in positions])
-        groups.append(EnvelopeGroupView(envelope=envelope, positions=positions, totals=totals))
+        holdings = [
+            calc.Holding(
+                value_eur=position.result.value_eur,
+                cost_eur=position.result.cost_eur,
+                ongoing_charges_pct=position.asset.ongoing_charges_pct or 0.0,
+            )
+            for position in positions
+        ]
+        opened_on = envelopes.effective_opening_date(envelope) or today
+        estimates = calc.estimate_costs(
+            holdings, envelopes.cost_properties(envelope), opened_on, today
+        )
+        for position, estimate in zip(positions, estimates, strict=True):
+            position.costs = estimate
+        groups.append(
+            EnvelopeGroupView(
+                envelope=envelope,
+                positions=positions,
+                totals=totals,
+                costs=calc.add_up_costs(estimates),
+            )
+        )
     groups.sort(key=lambda group: group.totals.value_eur, reverse=True)
     return groups
 
