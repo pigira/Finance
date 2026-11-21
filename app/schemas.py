@@ -5,6 +5,7 @@ values, and reports problems as French messages that the template shows
 next to the offending field.
 """
 
+import math
 from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
@@ -34,9 +35,12 @@ def parse_decimal(value: Any) -> Any:
     if cleaned == "":
         return None
     try:
-        return float(cleaned)
+        number = float(cleaned)
     except ValueError:
         raise ValueError("Nombre invalide") from None
+    if not math.isfinite(number):  # "inf", "nan", "1e400"
+        raise ValueError("Nombre invalide")
+    return number
 
 
 def parse_date(value: Any) -> Any:
@@ -64,6 +68,13 @@ DateInput = Annotated[date, BeforeValidator(parse_date)]
 OptionalDate = Annotated[date | None, BeforeValidator(lambda v: parse_date(v) if v else None)]
 
 
+def check_percentage(value: float | None) -> float | None:
+    """A rate typed as a percentage (0,5 = 0.5 %): between 0 and 100."""
+    if value is not None and not 0 <= value <= 100:
+        raise ValueError("Entre 0 et 100 %")
+    return value
+
+
 class LotForm(BaseModel):
     """A purchase as submitted by the form, after validation.
 
@@ -75,7 +86,7 @@ class LotForm(BaseModel):
     name: str
     asset_type: Literal["etf", "stock", "fund"]
     manual_price: bool = False
-    ongoing_charges_pct: OptionalDecimal = None  # the Asset's own yearly fee (TER)
+    ongoing_charges_pct: OptionalDecimal = None  # the Asset's own Ongoing charges
     ticker: str = ""
     exchange: str = ""
     currency: str  # typed "EUR", "usd", "GBX"...; ends up as the ISO major unit
@@ -115,9 +126,7 @@ class LotForm(BaseModel):
     @field_validator("ongoing_charges_pct")
     @classmethod
     def _ongoing_charges(cls, value: float | None) -> float | None:
-        if value is not None and not 0 <= value <= 100:
-            raise ValueError("Entre 0 et 100 %")
-        return value
+        return check_percentage(value)
 
     @field_validator("ticker", "exchange", mode="before")
     @classmethod
@@ -248,9 +257,7 @@ class EnvelopeForm(BaseModel):
     )
     @classmethod
     def _percentage(cls, value: float | None) -> float | None:
-        if value is not None and not 0 <= value <= 100:
-            raise ValueError("Entre 0 et 100 %")
-        return value
+        return check_percentage(value)
 
     @field_validator("custody_fee_per_position_eur", "account_fee_eur", "order_fee_min_eur")
     @classmethod
@@ -261,10 +268,12 @@ class EnvelopeForm(BaseModel):
 
     @field_validator("exit_tax_threshold_years")
     @classmethod
-    def _whole_years(cls, value: float | None) -> float | None:
-        if value is not None and (value != int(value) or not 1 <= value <= 30):
+    def _whole_years(cls, value: float | None) -> int | None:
+        if value is None:
+            return None
+        if value != int(value) or not 1 <= value <= 30:
             raise ValueError("Nombre entier d'années, de 1 à 30")
-        return value
+        return int(value)
 
     @model_validator(mode="after")
     def _exit_tax_shape(self) -> "EnvelopeForm":

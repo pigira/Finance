@@ -289,8 +289,7 @@ def _build_envelope_groups(
     position_of: Callable[[Asset, list[Transaction]], PositionView],
     today: date,
 ) -> list[EnvelopeGroupView]:
-    """One group per Envelope holding something; largest group and largest Position first.
-    Each Position gets its estimated costs, which depend on the whole Envelope."""
+    """One group per Envelope holding something; largest group and largest Position first."""
     envelope_by_id: dict[int, Envelope] = {}
     positions_by_envelope: dict[int, list[PositionView]] = {}
     for asset in assets:
@@ -306,31 +305,38 @@ def _build_envelope_groups(
     for envelope_id, positions in positions_by_envelope.items():
         envelope = envelope_by_id[envelope_id]
         positions.sort(key=lambda position: position.result.value_eur, reverse=True)
-        totals = calc.compute_portfolio([position.result for position in positions])
-        holdings = [
-            calc.Holding(
-                value_eur=position.result.value_eur,
-                cost_eur=position.result.cost_eur,
-                ongoing_charges_pct=position.asset.ongoing_charges_pct or 0.0,
-            )
-            for position in positions
-        ]
-        opened_on = envelopes.effective_opening_date(envelope) or today
-        estimates = calc.estimate_costs(
-            holdings, envelopes.cost_properties(envelope), opened_on, today
-        )
-        for position, estimate in zip(positions, estimates, strict=True):
-            position.costs = estimate
         groups.append(
             EnvelopeGroupView(
                 envelope=envelope,
                 positions=positions,
-                totals=totals,
-                costs=calc.add_up_costs(estimates),
+                totals=calc.compute_portfolio([position.result for position in positions]),
+                costs=_attach_costs(envelope, positions, today),
             )
         )
     groups.sort(key=lambda group: group.totals.value_eur, reverse=True)
     return groups
+
+
+def _attach_costs(
+    envelope: Envelope, positions: list[PositionView], today: date
+) -> calc.CostEstimate:
+    """Give each Position of the Envelope its estimated costs (they depend on the whole
+    Envelope: account fee, net gain), and return the Envelope's total."""
+    calc_positions = [
+        calc.Position(
+            value_eur=position.result.value_eur,
+            cost_eur=position.result.cost_eur,
+            ongoing_charges_pct=position.asset.ongoing_charges_pct or 0.0,
+        )
+        for position in positions
+    ]
+    opened_on = envelopes.effective_opening_date(envelope) or today
+    estimates = calc.estimate_costs(
+        calc_positions, envelopes.cost_properties(envelope), opened_on, today
+    )
+    for position, estimate in zip(positions, estimates, strict=True):
+        position.costs = estimate
+    return calc.add_up_costs(estimates)
 
 
 # ---- allocation (donut data) -----------------------------------------------

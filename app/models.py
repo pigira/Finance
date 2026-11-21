@@ -97,7 +97,7 @@ class Asset(Base):
     price_scale: Mapped[float] = mapped_column(Float, default=1.0)
     # True: no API quote; the owner types the current price by hand.
     manual_price: Mapped[bool] = mapped_column(Boolean, default=False)
-    # The Asset's own yearly fee (an ETF's TER), in percent. NULL: not filled in.
+    # Ongoing charges: the Asset's own yearly fee, in percent. NULL: not filled in.
     ongoing_charges_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     transactions: Mapped[list["Transaction"]] = relationship(

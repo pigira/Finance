@@ -93,11 +93,21 @@ def update_envelope(
     return RedirectResponse("/settings", status_code=303)
 
 
-@router.post("/settings/envelopes/{envelope_id}/defaults")
-def reapply_defaults(envelope_id: int, session: Session = Depends(get_session)):
-    """The "Réappliquer les valeurs par défaut" button: the exit tax of its type."""
-    envelopes.reapply_defaults(session, _get_envelope_or_404(session, envelope_id))
-    return RedirectResponse(f"/settings/envelopes/{envelope_id}/edit", status_code=303)
+@router.post("/settings/envelopes/{envelope_id}/defaults", response_class=HTMLResponse)
+def reapply_defaults(
+    request: Request,
+    envelope_id: int,
+    data: dict[str, str] = Depends(read_form),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """The "Réappliquer les valeurs par défaut" button: the form comes back as typed, with
+    the exit tax of the type picked in it. Nothing is saved until "Enregistrer"."""
+    envelope = _get_envelope_or_404(session, envelope_id)
+    envelope_type = data.get("envelope_type", "")
+    if envelope_type not in envelopes.ENVELOPE_TYPE_LABELS:
+        envelope_type = envelope.envelope_type
+    values = {**data, **_default_values(envelope_type)}
+    return _render_form(request, session, values=values, envelope=envelope)
 
 
 @router.post("/settings/envelopes/{envelope_id}/delete", response_class=HTMLResponse)
@@ -140,11 +150,13 @@ def _envelope_values(envelope: Envelope) -> dict[str, str]:
 
 
 def _default_values(envelope_type: str) -> dict[str, str]:
-    """Form values suggested by an envelope type; the other cost fields stay empty."""
-    defaults = envelopes.TYPE_DEFAULTS[envelope_type]
+    """Form values suggested by an envelope type: its exit tax (fees have no default)."""
+    tax = envelopes.DEFAULT_EXIT_TAX[envelope_type]
     return {
         "envelope_type": envelope_type,
-        **{name: format_input_number(defaults.get(name)) for name in envelopes.TAX_FIELDS},
+        "exit_tax_rate_before_pct": format_input_number(tax.rate_before_pct if tax else None),
+        "exit_tax_threshold_years": format_input_number(tax.threshold_years if tax else None),
+        "exit_tax_rate_after_pct": format_input_number(tax.rate_after_pct if tax else None),
     }
 
 
