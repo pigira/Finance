@@ -66,7 +66,7 @@ def update_lot(
     session: Session, transaction: Transaction, form: LotForm, settings: Settings
 ) -> Transaction:
     """Edit a purchase. ISIN, exchange and currency of its asset are not editable."""
-    envelope = _get_envelope(session, form)
+    envelope = _get_envelope(session, form, current=transaction.envelope)
     _apply_asset_fields(session, transaction.asset, form, settings)
     _apply_lot_fields(transaction, form, envelope)
     session.commit()
@@ -80,11 +80,15 @@ def delete_lot(session: Session, transaction: Transaction) -> None:
     session.commit()
 
 
-def _get_envelope(session: Session, form: LotForm) -> Envelope:
+def _get_envelope(session: Session, form: LotForm, current: Envelope | None = None) -> Envelope:
+    """The envelope chosen in the form. `current` is the lot's envelope when it is edited."""
     envelope = session.get(Envelope, form.envelope_id)
     if envelope is None:
         raise LotError("envelope_id", "Compte inconnu")
     if envelope.opening_date is not None and form.trade_date < envelope.opening_date:
+        if current is not None and current.id != envelope.id:
+            # The lot is being moved: the envelope is what the user changed.
+            raise LotError("envelope_id", "Compte ouvert après la date de cet achat")
         raise LotError("trade_date", "Date antérieure à l'ouverture du compte")
     return envelope
 

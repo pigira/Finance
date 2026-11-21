@@ -66,6 +66,10 @@ CREATE TABLE price_history (
     FOREIGN KEY(asset_id) REFERENCES assets (id)
 );
 INSERT INTO schema_version VALUES (1, '2026-01-05 09:00:00');
+"""
+
+# Four purchases: two at "Courtier A", one at "Courtier B", one without broker.
+V1_PURCHASES = """
 INSERT INTO assets VALUES
     (1, 'US5949181045', 'Microsoft Corporation', 'stock', 'USD', 'MSFT', 'NMS', 1.0, 0),
     (2, 'IE00B4L5Y983', 'iShares Core MSCI World', 'etf', 'EUR', 'IWDA.AS', 'AMS', 1.0, 0);
@@ -81,11 +85,11 @@ def fresh_engine(tmp_path: Path) -> Engine:
     return make_engine(f"sqlite:///{tmp_path}/fresh.db")
 
 
-def v1_engine(tmp_path: Path) -> Engine:
-    """A database file exactly as version 1 left it, with four purchases."""
+def v1_engine(tmp_path: Path, purchases: str = V1_PURCHASES) -> Engine:
+    """A database file exactly as version 1 left it, holding `purchases` (SQL inserts)."""
     engine = make_engine(f"sqlite:///{tmp_path}/v1.db")
     with engine.connect() as connection:
-        connection.connection.executescript(V1_SCHEMA)
+        connection.connection.executescript(V1_SCHEMA + purchases)
     return engine
 
 
@@ -143,3 +147,28 @@ def test_starting_again_after_the_migration_changes_nothing(tmp_path: Path) -> N
         assert session.scalar(select(SchemaVersion.version)) == 2
         assert len(envelopes.all_envelopes(session)) == 3
         assert len(session.scalars(select(Transaction)).all()) == 4
+
+
+def test_v1_database_without_purchases_gets_the_default_envelope(tmp_path: Path) -> None:
+    engine = v1_engine(tmp_path, purchases="")
+    init_db(engine)
+
+    with Session(engine) as session:
+        assert session.scalar(select(SchemaVersion.version)) == 2
+        assert [e.name for e in envelopes.all_envelopes(session)] == ["Compte par défaut"]
+
+
+def test_v1_purchases_all_with_a_broker_need_no_default_envelope(tmp_path: Path) -> None:
+    every_lot_has_a_broker = V1_PURCHASES.replace("NULL, NULL, NULL,", "NULL, NULL, 'Courtier B',")
+    engine = v1_engine(tmp_path, purchases=every_lot_has_a_broker)
+    init_db(engine)
+
+    with Session(engine) as session:
+        assert [e.name for e in envelopes.all_envelopes(session)] == ["Courtier A", "Courtier B"]
+        lots = session.scalars(select(Transaction).order_by(Transaction.id)).all()
+        assert [lot.envelope.name for lot in lots] == [
+            "Courtier A",
+            "Courtier A",
+            "Courtier B",
+            "Courtier B",
+        ]

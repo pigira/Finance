@@ -170,6 +170,21 @@ def test_a_purchase_cannot_predate_the_opening_of_its_envelope(
     assert client.post("/lots", data=old_lot, follow_redirects=False).status_code == 303
 
 
+def test_a_purchase_cannot_move_into_an_envelope_opened_after_it(
+    client: TestClient, session: Session
+) -> None:
+    client.post("/lots", data=EUR_ETF_LOT)  # bought on 12/09/2023, in envelope 1
+    client.post("/settings/envelopes", data={**PEA, "opening_date": "01/01/2024"})
+
+    response = client.post("/lots/1", data={**EUR_ETF_LOT, "envelope_id": "2"})
+    assert response.status_code == 422
+    # Only the envelope changed, so the message sits under the envelope picker.
+    assert 'id="envelope_id-error"' in response.text
+    assert "Compte ouvert après la date de cet achat" in unescape(response.text)
+    session.expire_all()
+    assert session.get(Transaction, 1).envelope.name == "Compte par défaut"
+
+
 # ---- CSV export -------------------------------------------------------------------
 
 

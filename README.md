@@ -71,7 +71,8 @@ and `$env:PRICE_PROVIDER="mock"` first, then the two commands without the prefix
 The demo holds Microsoft (USD, two purchases), an MSCI World ETF bought in
 Amsterdam (EUR), the same ETF bought in London where it is quoted in pence
 (GBX), and an unlisted fund whose price is typed by hand. They sit in three
-Envelopes: two CTOs at two brokers and a PER.
+Envelopes: two CTOs at two brokers and a PER. The empty "Compte par défaut"
+that every database starts with is listed too; delete it in Paramètres if you like.
 
 ## Configuration
 
@@ -187,12 +188,14 @@ app/
   db.py, models.py   SQLAlchemy engine and tables
   calc.py            portfolio maths (pure)
   isin.py            ISIN check digit
-  schemas.py         validation of the purchase form
+  schemas.py         validation of the purchase and envelope forms
   formatting.py      French number and date formatting
   security.py        Host and Origin checks
   providers/         base.py (interfaces), yahoo.py, frankfurter.py, mock.py
-  services/          pricing.py (refresh), fx.py, portfolio.py, lots.py, export.py
-  routers/           pages.py, lots.py, fragments.py (HTMX)
+  services/          pricing.py (refresh), fx.py, portfolio.py, lots.py, envelopes.py,
+                     export.py
+  routers/           pages.py, lots.py, envelopes.py (Paramètres > Comptes),
+                     fragments.py (HTMX)
   templates/, static/
   refresh.py         python -m app.refresh
   seed_demo.py       python -m app.seed_demo
