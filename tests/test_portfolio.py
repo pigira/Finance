@@ -1,5 +1,6 @@
 """The portfolio view: Consolidated positions, and Positions grouped by Envelope."""
 
+import re
 from datetime import date, datetime
 from html import unescape
 
@@ -231,3 +232,51 @@ def test_a_kpi_card_sums_up_the_estimated_costs(client: TestClient, cto_a_with_c
     # CTO Courtier B's tax is unknown: the exit cost is a lower bound, and says why.
     assert f"sortie ≥{NBSP}340,01{NBSP}€" in kpis
     assert "hors fiscalité de : CTO Courtier B" in kpis
+
+
+def test_costs_never_change_the_pl(
+    cto_a_with_costs: None, session: Session, settings: Settings
+) -> None:
+    totals = build_portfolio(session, settings).totals
+    # The reference P/L of MSFT (+1 172.98) and of the ETF (+148.00), costs or not.
+    assert totals.pl_eur == pytest.approx(1172.98 + 148.00, abs=0.01)
+
+
+def test_cost_tooltips_are_read_by_screen_readers(
+    client: TestClient, cto_a_with_costs: None
+) -> None:
+    by_envelope = unescape(client.get("/").text).split('id="positions-by-envelope"')[1]
+    # The breakdown exists as text, not only in a hover bubble.
+    assert f'<span class="sr-only"> : Courtage à la vente : 22,73{NBSP}€' in by_envelope
+    # A dash says what it means.
+    assert '<span aria-hidden="true">—</span><span class="sr-only">inconnu</span>' in by_envelope
+
+
+def test_tooltips_say_what_is_unknown_and_what_is_a_lower_bound(
+    client: TestClient, cto_a_with_costs: None
+) -> None:
+    html = unescape(client.get("/").text)
+    by_asset, by_envelope = html.split('id="positions-by-envelope"')
+    # One Position: its own Envelope.
+    assert "Fiscalité non renseignée pour ce compte" in by_envelope
+    # A lower bound is not "a maximum": the caveat is only on complete figures.
+    tips = re.findall(r'data-tip="([^"]*)"', by_asset)
+    lower_bound_tip = next(tip for tip in tips if "hors fiscalité de" in tip)
+    assert "majorant" not in lower_bound_tip
+    assert "Abattements ignorés : c'est un majorant" in by_envelope  # MSFT in CTO Courtier A
+
+
+def test_a_total_with_no_known_tax_names_the_envelopes(client: TestClient, two_ctos: None) -> None:
+    kpis = unescape(client.get("/").text).split('class="kpis"')[1].split("</section>")[0]
+    assert "Fiscalité non renseignée : CTO Courtier A, CTO Courtier B" in kpis
+
+
+def test_an_unknown_exit_cost_sorts_by_its_order_fee(
+    client: TestClient, cto_a_with_costs: None, session: Session
+) -> None:
+    cto_b = next(e for e in envelopes.all_envelopes(session) if e.name == "CTO Courtier B")
+    cto_b.order_fee_min_eur = 5.0
+    session.commit()
+    by_envelope = client.get("/").text.split('id="positions-by-envelope"')[1]
+    cto_b_group = by_envelope.split("CTO Courtier B")[1]
+    assert 'data-exit-cost="5.0"' in cto_b_group

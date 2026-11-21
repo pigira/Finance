@@ -13,28 +13,36 @@
 {%- endmacro %}
 
 {# Estimated costs (calc.CostEstimate). The exit tax is unknown (None) for an Envelope
-   whose tax is not filled in; a total that misses one is a lower bound ("≥"). #}
+   whose tax is not filled in; a total that misses one is a lower bound ("≥").
+   `without_tax`: names of the Envelopes whose tax is missing from the figure.
+   `own_envelope`: the figure is one Position, so "ce compte" is unambiguous.
+   Every tip is also given as sr-only text, like the "périmé" badge. #}
+{% macro annual_cost_tip(costs) -%}
+Frais du compte : {{ costs.annual_envelope_fees_eur | money }} · Frais courants : {{ costs.annual_ongoing_charges_eur | money }}
+{%- endmacro %}
+
 {% macro annual_cost_cell(costs) -%}
 <td data-label="Coût annuel" class="col-cost">
-  <span class="has-tip" tabindex="0"
-        data-tip="Frais du compte : {{ costs.annual_envelope_fees_eur | money }} · Frais courants : {{ costs.annual_ongoing_charges_eur | money }}">{{ costs.annual_cost_eur | money }}</span>
+  <span class="has-tip" tabindex="0" data-tip="{{ annual_cost_tip(costs) }}">{{ costs.annual_cost_eur | money }}<span class="sr-only"> : {{ annual_cost_tip(costs) }}</span></span>
 </td>
 {%- endmacro %}
 
 {% macro exit_cost_text(costs) -%}
-{% if costs.exit_tax_eur is none %}—{% elif not costs.exit_tax_complete %}≥ {{ costs.exit_cost_eur | money }}{% else %}{{ costs.exit_cost_eur | money }}{% endif %}
+{% if costs.exit_tax_eur is none %}<span aria-hidden="true">—</span><span class="sr-only">inconnu</span>
+{%- elif not costs.exit_tax_complete %}≥ {{ costs.exit_cost_eur | money }}
+{%- else %}{{ costs.exit_cost_eur | money }}{% endif %}
 {%- endmacro %}
 
-{% macro exit_cost_tip(costs, untaxed) -%}
+{% macro exit_cost_tip(costs, without_tax, own_envelope=false) -%}
 Courtage à la vente : {{ costs.order_fee_eur | money }}
-{%- if costs.exit_tax_eur is none %} · Fiscalité non renseignée pour ce compte
-{%- else %} · Impôt latent : {{ costs.exit_tax_eur | money }}
-{%- if not costs.exit_tax_complete %} · hors fiscalité de : {{ untaxed | join(", ") }}{% endif %} · Abattements ignorés : c'est un majorant{% endif %}
+{%- if costs.exit_tax_eur is none %} · Fiscalité non renseignée {% if own_envelope %}pour ce compte{% else %}: {{ without_tax | join(", ") }}{% endif %}
+{%- elif not costs.exit_tax_complete %} · Impôt latent connu : {{ costs.exit_tax_eur | money }} · hors fiscalité de : {{ without_tax | join(", ") }}
+{%- else %} · Impôt latent : {{ costs.exit_tax_eur | money }} · Abattements ignorés : c'est un majorant{% endif %}
 {%- endmacro %}
 
-{% macro exit_cost_cell(costs, untaxed) -%}
+{% macro exit_cost_cell(costs, without_tax, own_envelope=false) -%}
 <td data-label="Coût de sortie" class="col-cost">
-  <span class="has-tip" tabindex="0" data-tip="{{ exit_cost_tip(costs, untaxed) }}">{{ exit_cost_text(costs) }}</span>
+  <span class="has-tip" tabindex="0" data-tip="{{ exit_cost_tip(costs, without_tax, own_envelope) }}">{{ exit_cost_text(costs) }}<span class="sr-only"> : {{ exit_cost_tip(costs, without_tax, own_envelope) }}</span></span>
 </td>
 {%- endmacro %}
 
@@ -63,7 +71,7 @@ Courtage à la vente : {{ costs.order_fee_eur | money }}
   <tbody class="position" {% if group %}data-group="{{ group.id }}" {% endif %}data-name="{{ asset.name | lower }}" data-quantity="{{ result.quantity }}"
          data-pru="{{ result.pru_eur }}" data-value="{{ result.value_eur }}"
          data-pl-eur="{{ result.pl_eur }}" data-pl-pct="{{ result.pl_pct }}"
-         data-annual-cost="{{ position.costs.annual_cost_eur }}" data-exit-cost="{{ position.costs.exit_cost_eur or 0 }}">
+         data-annual-cost="{{ position.costs.annual_cost_eur }}" data-exit-cost="{{ position.costs.order_fee_eur if position.costs.exit_cost_eur is none else position.costs.exit_cost_eur }}">
     <tr class="position-row">
       <td class="col-asset">
         <div class="asset">
@@ -127,7 +135,7 @@ Courtage à la vente : {{ costs.order_fee_eur | money }}
       <td data-label="Valeur">{{ result.value_eur | money }}</td>
       <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(result, position.is_foreign) }}</td>
       {{ annual_cost_cell(position.costs) }}
-      {{ exit_cost_cell(position.costs, position.envelopes_without_exit_tax) }}
+      {{ exit_cost_cell(position.costs, position.envelopes_without_exit_tax, own_envelope=group is not none) }}
       <td class="col-actions">
         <div class="actions">
           <a class="icon-btn" href="/lots/new?asset_id={{ asset.id }}" title="Ajouter un achat de cet actif"
@@ -253,7 +261,7 @@ Courtage à la vente : {{ costs.order_fee_eur | money }}
     <h2 class="kpi-label">Coûts estimés</h2>
     <p class="kpi-value">{{ view.costs.annual_cost_eur | money }} / an</p>
     <p class="kpi-sub">
-      <span class="has-tip" tabindex="0" data-tip="{{ exit_cost_tip(view.costs, view.envelopes_without_exit_tax) }}">sortie {{ exit_cost_text(view.costs) }}</span>
+      <span class="has-tip" tabindex="0" data-tip="{{ exit_cost_tip(view.costs, view.envelopes_without_exit_tax) }}">sortie {{ exit_cost_text(view.costs) }}<span class="sr-only"> : {{ exit_cost_tip(view.costs, view.envelopes_without_exit_tax) }}</span></span>
       · non déduits de la plus-value
     </p>
   </article>
@@ -342,7 +350,7 @@ Courtage à la vente : {{ costs.order_fee_eur | money }}
         </td>
         <td data-label="Plus-value latente" class="col-pl">{{ pl(group.totals.pl_eur, group.totals.pl_pct) }}</td>
         {{ annual_cost_cell(group.costs) }}
-        {{ exit_cost_cell(group.costs, [envelope.name] if envelope.exit_tax_rate_before_pct is none else []) }}
+        {{ exit_cost_cell(group.costs, group.envelopes_without_exit_tax) }}
         <td class="col-actions"></td>
       </tr>
     </tbody>

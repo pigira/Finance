@@ -29,12 +29,7 @@ def export_transactions(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    filename = f"transactions-{local_today(settings.display_timezone).isoformat()}.csv"
-    return Response(
-        content=transactions_csv(session),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return _csv_download("transactions", transactions_csv(session), settings)
 
 
 @router.get("/export/envelopes.csv")
@@ -42,9 +37,14 @@ def export_envelopes(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    filename = f"comptes-{local_today(settings.display_timezone).isoformat()}.csv"
+    return _csv_download("comptes", envelopes_csv(session), settings)
+
+
+def _csv_download(name: str, content: str, settings: Settings) -> Response:
+    """A CSV file to save, dated with today's date: "transactions-2026-11-21.csv"."""
+    filename = f"{name}-{local_today(settings.display_timezone).isoformat()}.csv"
     return Response(
-        content=envelopes_csv(session),
+        content=content,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

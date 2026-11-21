@@ -66,7 +66,9 @@ class PositionView:
     def envelopes_without_exit_tax(self) -> list[str]:
         """Names of its Envelopes whose exit tax is not filled in (its exit cost is then
         a lower bound)."""
-        return [e.name for e in self.envelopes if e.exit_tax_rate_before_pct is None]
+        return [
+            envelope.name for envelope in self.envelopes if not envelopes.has_exit_tax(envelope)
+        ]
 
     @property
     def envelopes(self) -> list[Envelope]:
@@ -83,6 +85,10 @@ class EnvelopeGroupView:
     positions: list[PositionView]
     totals: calc.PortfolioResult
     costs: calc.CostEstimate
+
+    @property
+    def envelopes_without_exit_tax(self) -> list[str]:
+        return [] if envelopes.has_exit_tax(self.envelope) else [self.envelope.name]
 
 
 @dataclass(frozen=True)
@@ -110,9 +116,7 @@ class PortfolioView:
     @property
     def envelopes_without_exit_tax(self) -> list[str]:
         return sorted(
-            group.envelope.name
-            for group in self.envelope_groups
-            if group.envelope.exit_tax_rate_before_pct is None
+            name for group in self.envelope_groups for name in group.envelopes_without_exit_tax
         )
 
     @property
@@ -368,31 +372,12 @@ def _build_allocations(
     }
 
 
-def _slices_by_envelope(groups: list[EnvelopeGroupView], total: float) -> list[AllocationSlice]:
-    """Largest Envelope first (groups are sorted by value); the rest folded into "Autres"."""
-    named, others = groups[:MAX_NAMED_SLICES], groups[MAX_NAMED_SLICES:]
-    slices = [
-        _slice(group.envelope.name, group.totals.value_eur, total, slot)
-        for slot, group in enumerate(named, start=1)
-    ]
-    if others:
-        others_value = sum(group.totals.value_eur for group in others)
-        slices.append(_slice(f"Autres ({len(others)})", others_value, total, OTHER_SLICE_COLOR))
-    return slices
-
-
 def _slices_by_asset(positions: list[PositionView], total: float) -> list[AllocationSlice]:
-    """Largest holdings first; everything after the sixth is folded into "Autres"."""
-    named = positions[:MAX_NAMED_SLICES]  # positions are already sorted by value
-    others = positions[MAX_NAMED_SLICES:]
-    slices = [
-        _slice(_legend_label(position, positions), position.result.value_eur, total, slot)
-        for slot, position in enumerate(named, start=1)
+    """Largest holdings first (positions are already sorted by value)."""
+    ranked = [
+        (_legend_label(position, positions), position.result.value_eur) for position in positions
     ]
-    if others:
-        others_value = sum(position.result.value_eur for position in others)
-        slices.append(_slice(f"Autres ({len(others)})", others_value, total, OTHER_SLICE_COLOR))
-    return slices
+    return _ranked_slices(ranked, total)
 
 
 def _legend_label(position: PositionView, positions: list[PositionView]) -> str:
@@ -420,15 +405,24 @@ def _slices_by_currency(positions: list[PositionView], total: float) -> list[All
     for position in positions:
         currency = position.asset.currency
         by_currency[currency] = by_currency.get(currency, 0.0) + position.result.value_eur
+    ranked = sorted(by_currency.items(), key=lambda item: (item[0] != EUR, -item[1]))
+    return _ranked_slices(ranked, total)
 
-    ordered = sorted(by_currency.items(), key=lambda item: (item[0] != EUR, -item[1]))
-    named, others = ordered[:MAX_NAMED_SLICES], ordered[MAX_NAMED_SLICES:]
+
+def _slices_by_envelope(groups: list[EnvelopeGroupView], total: float) -> list[AllocationSlice]:
+    """Largest Envelope first (groups are already sorted by value)."""
+    ranked = [(group.envelope.name, group.totals.value_eur) for group in groups]
+    return _ranked_slices(ranked, total)
+
+
+def _ranked_slices(ranked: list[tuple[str, float]], total: float) -> list[AllocationSlice]:
+    """(label, value) in display order: the first six named, the rest folded into "Autres"."""
+    named, others = ranked[:MAX_NAMED_SLICES], ranked[MAX_NAMED_SLICES:]
     slices = [
-        _slice(currency, value, total, slot)
-        for slot, (currency, value) in enumerate(named, start=1)
+        _slice(label, value, total, slot) for slot, (label, value) in enumerate(named, start=1)
     ]
     if others:
-        others_value = sum(value for _currency, value in others)
+        others_value = sum(value for _label, value in others)
         slices.append(_slice(f"Autres ({len(others)})", others_value, total, OTHER_SLICE_COLOR))
     return slices
 

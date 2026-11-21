@@ -241,7 +241,10 @@ def _render_form(
             }
             for envelope in envelope_list
         },
-        "feesTyped": lot is not None or values.get("fees", "") != "",
+        # A fee shown again after a validation error was typed, unless the form says
+        # it was the suggestion (hidden field fees_suggested).
+        "feesTyped": lot is not None
+        or (values.get("fees", "") != "" and values.get("fees_suggested") != "1"),
     }
     context = page_context(
         request,

@@ -336,7 +336,9 @@ def _exit_tax_shares(
 def add_up_costs(estimates: Sequence[CostEstimate]) -> CostEstimate:
     """Costs of several Positions together. An unknown exit tax leaves the known part as a
     lower bound (exit_tax_complete False); the tax is unknown only if no part is known."""
-    known_taxes = [e.exit_tax_eur for e in estimates if e.exit_tax_eur is not None]
+    known_taxes = [
+        estimate.exit_tax_eur for estimate in estimates if estimate.exit_tax_eur is not None
+    ]
     return CostEstimate(
         annual_envelope_fees_eur=sum(estimate.annual_envelope_fees_eur for estimate in estimates),
         annual_ongoing_charges_eur=sum(

@@ -843,6 +843,12 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
   .actions { justify-content: flex-start; margin: 0; padding-top: 8px; border-top: 1px solid var(--border); }
   .col-price .has-tip:hover::after,
   .col-price .has-tip:focus-visible::after { right: auto; left: 0; bottom: calc(100% + 6px); }
+  /* Cost tips: a cost cell is half a card wide. The tip hangs from the cell, from its
+     left edge in the left column ("Coût annuel"), its right edge in the right one. */
+  .positions td.col-cost { position: relative; }
+  .col-cost .has-tip { position: static; }
+  td[data-label="Coût annuel"] .has-tip:hover::after,
+  td[data-label="Coût annuel"] .has-tip:focus-visible::after { right: auto; left: 0; }
 
   .lots-row { margin-top: 12px; }
 

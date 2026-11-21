@@ -18,7 +18,6 @@ CSV_COLUMNS = [
     "ticker",
     "exchange",
     "currency",
-    "ongoing_charges_pct",
     "type",
     "trade_date",
     "quantity",
@@ -28,6 +27,7 @@ CSV_COLUMNS = [
     "fx_source",
     "envelope",
     "created_at",
+    "ongoing_charges_pct",  # added later: last, so older exports keep their columns
 ]
 
 
@@ -52,16 +52,16 @@ def transactions_csv(session: Session) -> str:
                 asset.ticker or "",
                 asset.exchange,
                 asset.currency,
-                _number(asset.ongoing_charges_pct),
                 transaction.type,
                 transaction.trade_date.isoformat(),
-                repr(transaction.quantity),  # repr() keeps every digit of a float
-                repr(transaction.unit_price),
-                repr(transaction.fees),
-                "" if transaction.fx_rate is None else repr(transaction.fx_rate),
+                _number(transaction.quantity),
+                _number(transaction.unit_price),
+                _number(transaction.fees),
+                _number(transaction.fx_rate),
                 transaction.fx_source or "",
                 transaction.envelope.name,
                 transaction.created_at.isoformat(timespec="seconds"),
+                _number(asset.ongoing_charges_pct),
             ]
         )
     return buffer.getvalue()
@@ -99,5 +99,5 @@ def envelopes_csv(session: Session) -> str:
 
 
 def _number(value: float | None) -> str:
-    """Every digit of a number (repr), empty when it was left empty."""
+    """Every digit of a number (repr() keeps them all), empty when it was left empty."""
     return "" if value is None else repr(value)

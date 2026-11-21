@@ -81,11 +81,16 @@ def effective_opening_date(envelope: Envelope) -> date | None:
     return min((lot.trade_date for lot in envelope.transactions), default=None)
 
 
+def has_exit_tax(envelope: Envelope) -> bool:
+    """Its exit tax is filled in; without its first rate, the tax is unknown."""
+    return envelope.exit_tax_rate_before_pct is not None
+
+
 def cost_properties(envelope: Envelope) -> calc.EnvelopeCosts:
     """The envelope's cost properties for calc: a fee left empty is no fee, an exit tax
     without its first rate is unknown."""
     exit_tax = None
-    if envelope.exit_tax_rate_before_pct is not None:
+    if has_exit_tax(envelope):
         exit_tax = calc.ExitTax(
             rate_before_pct=envelope.exit_tax_rate_before_pct,
             threshold_years=envelope.exit_tax_threshold_years,

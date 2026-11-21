@@ -176,10 +176,11 @@
 
       <div class="field">
         <label for="fees">Frais <span class="label-note" x-text="'en ' + priceCurrency + ', facultatif'"></span>
-          <span class="label-note" x-show="feesSuggested" x-cloak>· calculés d'après le compte</span></label>
+          <span class="label-note" x-show="feesSuggested" x-cloak>· calculés d'après le compte<span x-show="feesMinimumSkipped">, sans le minimum (taux de change manquant)</span></span></label>
         <input id="fees" name="fees" type="text" inputmode="decimal" autocomplete="off"
                placeholder="0" x-model="fees" @input="feesTyped = true; feesSuggested = false"
                {{ describedby("fees") }}>
+        <input type="hidden" name="fees_suggested" :value="feesSuggested ? '1' : ''">
         {{ field_error(errors, "fees") }}
       </div>
 

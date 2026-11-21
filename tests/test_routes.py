@@ -124,7 +124,7 @@ def test_settings_page_and_csv_export(client: TestClient, demo_portfolio: None) 
     assert lines[0].startswith("transaction_id,isin,name,asset_type,ticker,exchange,currency")
     assert len(lines) == 1 + 5
     # Rows are ordered by purchase date; MSFT lot A is transaction 1.
-    msft_row = "1,US5949181045,Microsoft Corporation,stock,MSFT,NMS,USD,,buy,2024-03-15,"
+    msft_row = "1,US5949181045,Microsoft Corporation,stock,MSFT,NMS,USD,buy,2024-03-15,"
     assert any(line.startswith(msft_row + "10.0,400.0,1.0,1.09,ecb,") for line in lines)
     assert lines[1].startswith("5,ZZ000PECULE5,")  # the oldest purchase comes first
 
