@@ -40,7 +40,10 @@
           <span class="badge">{{ envelope_types[envelope.envelope_type] }}</span>
           <span class="dd-note">
             {%- if envelope.broker %}{{ envelope.broker }} · {% endif -%}
-            {%- if envelope.opening_date %}ouvert le {{ envelope.opening_date | date_fr }}{% else %}date d'ouverture inconnue{% endif -%}
+            {%- set opened_on = effective_opening_date(envelope) -%}
+            {%- if envelope.opening_date %}ouvert le {{ envelope.opening_date | date_fr }}
+            {%- elif opened_on %}ouvert le {{ opened_on | date_fr }} (date du premier achat)
+            {%- else %}date d'ouverture inconnue{% endif -%}
           </span>
         </div>
         <div class="actions">

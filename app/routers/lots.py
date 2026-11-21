@@ -160,6 +160,7 @@ def _asset_values(asset: Asset) -> dict[str, str]:
         "name": asset.name,
         "asset_type": asset.asset_type,
         "ticker": asset.ticker or "",
+        "ongoing_charges_pct": format_input_number(asset.ongoing_charges_pct),
     }
     if asset.manual_price:
         values["manual_price"] = "on"
@@ -220,6 +221,7 @@ def _render_form(
         "exchange": values.get("exchange", ""),
         "currency": values.get("currency", EUR),
         "manualPrice": values.get("manual_price") == "on",
+        "ongoingCharges": values.get("ongoing_charges_pct", ""),
         "tradeDate": values.get("trade_date", ""),
         "quantity": values.get("quantity", ""),
         "unitPrice": values.get("unit_price", ""),

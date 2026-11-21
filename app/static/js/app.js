@@ -307,6 +307,7 @@
         exchange: initial.exchange,
         currency: initial.currency,
         manualPrice: initial.manualPrice,
+        ongoingCharges: initial.ongoingCharges,
         tradeDate: initial.tradeDate,
         quantity: initial.quantity,
         unitPrice: initial.unitPrice,
@@ -383,6 +384,7 @@
           this.exchange = asset.exchange;
           this.currency = asset.currency;
           this.manualPrice = asset.manual_price === "on";
+          this.ongoingCharges = asset.ongoing_charges_pct;
         },
 
         // Ask the server for the reference rate of (currency, purchase date).

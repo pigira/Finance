@@ -5,7 +5,8 @@ what it cost and what it is worth today, in EUR.
 
 - **Purchases** ("lots") are entered by hand: ISIN, date, quantity, unit price, fees,
   and the **Envelope** they were bought in ("compte" in the interface: PEA, CTO,
-  assurance-vie…). Envelopes are managed in Paramètres.
+  assurance-vie…). Envelopes are managed in Paramètres, with their fees and the
+  tax due on their gains if they were emptied today (defaults per type, editable).
 - **Dashboard**: KPI cards, allocation donuts (by asset, type, currency) and a
   positions table with one sub-row per purchase, grouped by asset or by
   Envelope (with a subtotal per Envelope).

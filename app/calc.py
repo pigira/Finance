@@ -26,10 +26,23 @@ The same split exists as EUR amounts that add up exactly to pl_eur:
 
     pl_local_eur  = (value_local - cost_local) / r_buy   (local gain at the purchase rate)
     fx_effect_eur = value_local / r_now - value_local / r_buy
+
+Estimated costs
+---------------
+What holding a Position in its Envelope costs, at today's values (see
+GLOSSARY.md). Percentages are given as typed (0.5 means 0.5 %), amounts in EUR.
+
+    annual cost = (management % + custody % + ongoing charges %) x value
+                  + custody fee per Position + account fee x value / Envelope value
+    order fee   = max(order fee % x value, order fee minimum)   (selling it all at once)
+    exit tax    = rate x max(0, sum over the Envelope of (value - cost - order fee)),
+                  split over the Positions with a gain, in proportion to that gain
+    exit cost   = order fee + its share of the exit tax
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 
 EUR = "EUR"
 
@@ -193,4 +206,120 @@ def compute_portfolio(assets: Sequence[AssetResult]) -> PortfolioResult:
         pl_pct=safe_ratio(pl_eur, cost_eur),
         fx_effect_eur=fx_effect_eur,
         fx_effect_pct=safe_ratio(fx_effect_eur, value_eur_at_buy_rates),
+    )
+
+
+# ---- estimated costs ------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Holding:
+    """What the cost estimates need to know about one Position."""
+
+    value_eur: float
+    cost_eur: float
+    ongoing_charges_pct: float = 0.0  # the Asset's own yearly fee (TER)
+
+
+@dataclass(frozen=True)
+class ExitTax:
+    """The tax on the Envelope's gains if it were emptied today."""
+
+    rate_before_pct: float
+    # Both set, or neither (a single rate, as in a CTO).
+    threshold_years: int | None = None
+    rate_after_pct: float | None = None
+
+    def rate_pct(self, opened_on: date, today: date) -> float:
+        """The rate after the threshold applies from its anniversary on."""
+        if self.threshold_years is None or self.rate_after_pct is None:
+            return self.rate_before_pct
+        anniversary = _add_years(opened_on, self.threshold_years)
+        return self.rate_after_pct if today >= anniversary else self.rate_before_pct
+
+
+def _add_years(day: date, years: int) -> date:
+    """Same day `years` later; 29 February becomes 28 February in a common year."""
+    try:
+        return day.replace(year=day.year + years)
+    except ValueError:
+        return day.replace(year=day.year + years, day=28)
+
+
+@dataclass(frozen=True)
+class EnvelopeCosts:
+    """The cost properties of an Envelope; a fee it does not charge is 0."""
+
+    management_fee_pct: float = 0.0
+    custody_fee_pct: float = 0.0
+    custody_fee_per_position_eur: float = 0.0
+    account_fee_eur: float = 0.0
+    order_fee_pct: float = 0.0
+    order_fee_min_eur: float = 0.0
+    exit_tax: ExitTax | None = None  # None: not filled in, the tax is unknown
+
+
+@dataclass(frozen=True)
+class CostEstimate:
+    annual_cost_eur: float
+    order_fee_eur: float  # selling the whole Position in one order
+    exit_tax_eur: float | None  # its share of the Envelope's Latent exit tax; None if unknown
+
+    @property
+    def exit_cost_eur(self) -> float | None:
+        if self.exit_tax_eur is None:
+            return None
+        return self.order_fee_eur + self.exit_tax_eur
+
+
+def estimate_costs(
+    holdings: Sequence[Holding], costs: EnvelopeCosts, opened_on: date, today: date
+) -> list[CostEstimate]:
+    """Estimated costs of each Position of one Envelope, in the order given."""
+    envelope_value = sum(holding.value_eur for holding in holdings)
+    annual_costs = [
+        (costs.management_fee_pct + costs.custody_fee_pct + holding.ongoing_charges_pct)
+        / 100
+        * holding.value_eur
+        + costs.custody_fee_per_position_eur
+        + costs.account_fee_eur * safe_ratio(holding.value_eur, envelope_value)
+        for holding in holdings
+    ]
+    order_fees = [
+        max(costs.order_fee_pct / 100 * holding.value_eur, costs.order_fee_min_eur)
+        for holding in holdings
+    ]
+    exit_taxes = _exit_tax_shares(holdings, order_fees, costs.exit_tax, opened_on, today)
+    return [
+        CostEstimate(annual_cost_eur=annual, order_fee_eur=fee, exit_tax_eur=tax)
+        for annual, fee, tax in zip(annual_costs, order_fees, exit_taxes, strict=True)
+    ]
+
+
+def _exit_tax_shares(
+    holdings: Sequence[Holding],
+    order_fees: Sequence[float],
+    exit_tax: ExitTax | None,
+    opened_on: date,
+    today: date,
+) -> list[float | None]:
+    """The tax on the Envelope's net gain, split over the Positions with a gain."""
+    if exit_tax is None:
+        return [None] * len(holdings)
+    gains = [
+        holding.value_eur - holding.cost_eur - fee
+        for holding, fee in zip(holdings, order_fees, strict=True)
+    ]
+    total_tax = exit_tax.rate_pct(opened_on, today) / 100 * max(0.0, sum(gains))
+    positive_gains = sum(gain for gain in gains if gain > 0)
+    return [total_tax * safe_ratio(max(0.0, gain), positive_gains) for gain in gains]
+
+
+def add_up_costs(estimates: Sequence[CostEstimate]) -> CostEstimate:
+    """Costs of several Positions together; one unknown exit tax makes the total unknown."""
+    taxes = [estimate.exit_tax_eur for estimate in estimates]
+    return CostEstimate(
+        annual_cost_eur=sum(estimate.annual_cost_eur for estimate in estimates),
+        order_fee_eur=sum(estimate.order_fee_eur for estimate in estimates),
+        exit_tax_eur=None if None in taxes else sum(tax for tax in taxes if tax is not None),
     )

@@ -20,7 +20,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.timeutil import utc_now
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Base(DeclarativeBase):
@@ -72,6 +72,9 @@ def init_db(engine: Engine) -> None:
         Base.metadata.create_all(connection)
         if version == 1:
             _move_v1_brokers_to_envelopes(connection, models.DEFAULT_ENVELOPE_NAME)
+            version = 2
+        if version == 2:
+            _add_cost_columns(connection)
         connection.commit()
 
     with Session(engine) as session:
@@ -145,3 +148,32 @@ def get_session(request: Request) -> Iterator[Session]:
     session_factory: sessionmaker[Session] = request.app.state.session_factory
     with session_factory() as session:
         yield session
+
+
+# ---- version 2 -> 3: cost properties of envelopes, ongoing charges of assets --
+
+V3_COLUMNS = {
+    "envelopes": {
+        "management_fee_pct": "FLOAT",
+        "custody_fee_pct": "FLOAT",
+        "custody_fee_per_position_eur": "FLOAT",
+        "account_fee_eur": "FLOAT",
+        "order_fee_pct": "FLOAT",
+        "order_fee_min_eur": "FLOAT",
+        "entry_fee_pct": "FLOAT",
+        "exit_tax_rate_before_pct": "FLOAT",
+        "exit_tax_threshold_years": "INTEGER",
+        "exit_tax_rate_after_pct": "FLOAT",
+    },
+    "assets": {"ongoing_charges_pct": "FLOAT"},
+}
+
+
+def _add_cost_columns(connection: Connection) -> None:
+    """Add the new nullable columns; a table create_all just built already has them."""
+    for table, columns in V3_COLUMNS.items():
+        existing = {column["name"] for column in inspect(connection).get_columns(table)}
+        for name, sql_type in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"))
+    connection.execute(text("UPDATE schema_version SET version = 3"))

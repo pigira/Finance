@@ -9,6 +9,17 @@
 {% if errors.get(name) %} aria-invalid="true"{% endif %}
 {%- endmacro %}
 
+{# A cost property: a short decimal field with its unit. #}
+{% macro cost_field(name, label, unit, hint=none) -%}
+<div class="field">
+  <label for="{{ name }}">{{ label }} <span class="label-note">{{ unit }}</span></label>
+  <input id="{{ name }}" name="{{ name }}" value="{{ values.get(name, '') }}" type="text"
+         inputmode="decimal" autocomplete="off" {{ describedby(name, hint=hint is not none) }}>
+  {{ field_error(errors, name) }}
+  {% if hint %}<p class="hint" id="{{ name }}-hint">{{ hint }}</p>{% endif %}
+</div>
+{%- endmacro %}
+
 {% block content %}
 <form class="lot-form" method="post" action="{{ '/settings/envelopes/%d' | format(envelope.id) if envelope else '/settings/envelopes' }}" novalidate>
 
@@ -32,7 +43,13 @@
 
       <div class="field">
         <label for="envelope_type">Type</label>
-        <select id="envelope_type" name="envelope_type" {{ describedby("envelope_type") }}>
+        {# On a new envelope, picking a type fills in its default exit tax. #}
+        <select id="envelope_type" name="envelope_type" {{ describedby("envelope_type") }}
+                {% if not envelope %}x-data='{ defaults: {{ tax_defaults | tojson }} }'
+                @change="Object.entries(defaults[$el.value]).forEach(([name, value]) => {
+                  const field = document.getElementById(name);
+                  if (field && name.startsWith('exit_tax')) field.value = value;
+                })"{% endif %}>
           {% for code, label in envelope_types.items() %}
           <option value="{{ code }}" {% if values.get("envelope_type") == code %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
@@ -58,9 +75,50 @@
     </div>
   </section>
 
+  <section class="card form-section" aria-labelledby="fees-section-title">
+    <header class="card-header">
+      <h2 id="fees-section-title" class="card-title">Frais</h2>
+      <p class="card-note">Laissez vide un frais que ce compte ne facture pas.</p>
+    </header>
+    <div class="form-grid">
+      {{ cost_field("management_fee_pct", "Frais de gestion", "% par an", "Assurance-vie, PER, gestion pilotée : sur l'encours en unités de compte.") }}
+      {{ cost_field("custody_fee_pct", "Droits de garde", "% par an") }}
+      {{ cost_field("custody_fee_per_position_eur", "Droits de garde par ligne", "€ par an") }}
+      {{ cost_field("account_fee_eur", "Frais de tenue de compte", "€ par an") }}
+      {{ cost_field("order_fee_pct", "Frais de courtage", "% de l'ordre") }}
+      {{ cost_field("order_fee_min_eur", "Minimum par ordre", "€") }}
+      {{ cost_field("entry_fee_pct", "Frais sur versement", "%") }}
+    </div>
+  </section>
+
+  <section class="card form-section" aria-labelledby="tax-section-title">
+    <header class="card-header">
+      <h2 id="tax-section-title" class="card-title">Fiscalité à la sortie</h2>
+      <p class="card-note">Impôt et prélèvements sociaux sur les gains, si vous vidiez le compte aujourd'hui. Abattements ignorés : c'est un majorant.
+        Les valeurs proposées pour chaque type sont des valeurs indicatives au {{ defaults_as_of | date_fr }} : vérifiez-les.</p>
+    </header>
+    {{ field_error(errors, "form") }}
+    {% if envelope %}
+    <p class="settings-actions">
+      {# Its own form (below): forms cannot be nested. #}
+      <button type="submit" class="btn" form="reapply-defaults">{{ icon("refresh") }}Réappliquer les valeurs par défaut</button>
+      <span class="hint">Remplace la fiscalité par celle du type {{ envelope_types[envelope.envelope_type] }}. Les frais ne changent pas.</span>
+    </p>
+    {% endif %}
+    <div class="form-grid">
+      {{ cost_field("exit_tax_rate_before_pct", "Taux sur les gains", "%") }}
+      {{ cost_field("exit_tax_threshold_years", "Seuil", "années", "PEA : 5 ans, assurance-vie : 8 ans. Vide pour un taux unique.") }}
+      {{ cost_field("exit_tax_rate_after_pct", "Taux après le seuil", "%") }}
+    </div>
+  </section>
+
   <div class="form-actions">
     <button type="submit" class="btn btn-primary">{{ icon("check") }}{{ "Enregistrer les modifications" if envelope else "Enregistrer le compte" }}</button>
     <a class="btn" href="/settings">Annuler</a>
   </div>
 </form>
+{% if envelope %}
+<form id="reapply-defaults" method="post" action="/settings/envelopes/{{ envelope.id }}/defaults"
+      onsubmit="return confirm('Remplacer la fiscalité de ce compte par les valeurs par défaut ? Les modifications non enregistrées seront perdues.')"></form>
+{% endif %}
 {% endblock %}

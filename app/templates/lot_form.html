@@ -119,6 +119,15 @@
         {{ field_error(errors, "exchange") }}
       </div>
 
+      <div class="field">
+        <label for="ongoing_charges_pct">Frais courants <span class="label-note">% par an, facultatif</span></label>
+        <input id="ongoing_charges_pct" name="ongoing_charges_pct" type="text" inputmode="decimal"
+               autocomplete="off" placeholder="ex. 0,20" x-model="ongoingCharges"
+               {{ describedby("ongoing_charges_pct", hint=true) }}>
+        {{ field_error(errors, "ongoing_charges_pct") }}
+        <p class="hint" id="ongoing_charges_pct-hint">Les frais de l'ETF ou du fonds lui-même (TER), quel que soit le compte.</p>
+      </div>
+
       <div class="field field-wide">
         <label class="checkbox">
           <input type="checkbox" name="manual_price" x-model="manualPrice">
