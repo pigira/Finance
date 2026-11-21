@@ -1,4 +1,5 @@
-"""CSV export of all transactions (a plain-text backup of what the owner typed)."""
+"""CSV exports of the transactions and the envelopes (a plain-text backup of what the
+owner typed)."""
 
 import csv
 import io
@@ -6,7 +7,8 @@ import io
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Transaction
+from app.models import Envelope, Transaction
+from app.services.envelopes import COST_FIELDS
 
 CSV_COLUMNS = [
     "transaction_id",
@@ -16,6 +18,7 @@ CSV_COLUMNS = [
     "ticker",
     "exchange",
     "currency",
+    "ongoing_charges_pct",
     "type",
     "trade_date",
     "quantity",
@@ -49,6 +52,7 @@ def transactions_csv(session: Session) -> str:
                 asset.ticker or "",
                 asset.exchange,
                 asset.currency,
+                _number(asset.ongoing_charges_pct),
                 transaction.type,
                 transaction.trade_date.isoformat(),
                 repr(transaction.quantity),  # repr() keeps every digit of a float
@@ -61,3 +65,39 @@ def transactions_csv(session: Session) -> str:
             ]
         )
     return buffer.getvalue()
+
+
+ENVELOPE_COLUMNS = [
+    "envelope_id",
+    "name",
+    "envelope_type",
+    "broker",
+    "opening_date",
+    *COST_FIELDS,
+    "created_at",
+]
+
+
+def envelopes_csv(session: Session) -> str:
+    """Every envelope with all its properties, same conventions as transactions_csv."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(ENVELOPE_COLUMNS)
+    for envelope in session.scalars(select(Envelope).order_by(Envelope.id)):
+        writer.writerow(
+            [
+                envelope.id,
+                envelope.name,
+                envelope.envelope_type,
+                envelope.broker or "",
+                envelope.opening_date.isoformat() if envelope.opening_date else "",
+                *(_number(getattr(envelope, name)) for name in COST_FIELDS),
+                envelope.created_at.isoformat(timespec="seconds"),
+            ]
+        )
+    return buffer.getvalue()
+
+
+def _number(value: float | None) -> str:
+    """Every digit of a number (repr), empty when it was left empty."""
+    return "" if value is None else repr(value)

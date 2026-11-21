@@ -6,7 +6,8 @@ Four assets covering every case the app handles: a USD stock with two lots,
 an Amsterdam-listed EUR ETF, the same ETF bought in London where it is quoted
 in pence (GBX), and an unlisted fund whose price is typed by hand. With PRICE_PROVIDER=mock the
 resulting figures are exactly the reference values of the specification.
-They are spread over three envelopes: two CTOs at two brokers and a PER.
+They are spread over three envelopes: two CTOs at two brokers and a PER, each with
+the exit tax its type suggests.
 
 The command refuses to run on a database that already contains purchases.
 """
@@ -129,7 +130,13 @@ def main() -> int:
         envelope_ids: dict[str, int] = {}
         for values in DEMO_ENVELOPES:
             envelope: Envelope = envelopes.create_envelope(
-                session, EnvelopeForm.model_validate(values)
+                session,
+                EnvelopeForm.model_validate(
+                    {
+                        **values,
+                        **envelopes.default_exit_tax_fields(str(values["envelope_type"])),
+                    }
+                ),
             )
             envelope_ids[envelope.name] = envelope.id
 

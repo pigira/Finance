@@ -175,9 +175,11 @@
       </div>
 
       <div class="field">
-        <label for="fees">Frais <span class="label-note" x-text="'en ' + priceCurrency + ', facultatif'"></span></label>
+        <label for="fees">Frais <span class="label-note" x-text="'en ' + priceCurrency + ', facultatif'"></span>
+          <span class="label-note" x-show="feesSuggested" x-cloak>· calculés d'après le compte</span></label>
         <input id="fees" name="fees" type="text" inputmode="decimal" autocomplete="off"
-               placeholder="0" x-model="fees" {{ describedby("fees") }}>
+               placeholder="0" x-model="fees" @input="feesTyped = true; feesSuggested = false"
+               {{ describedby("fees") }}>
         {{ field_error(errors, "fees") }}
       </div>
 
@@ -189,7 +191,7 @@
 
       <div class="field">
         <label for="envelope_id">Compte</label>
-        <select id="envelope_id" name="envelope_id" {{ describedby("envelope_id") }}>
+        <select id="envelope_id" name="envelope_id" x-model="envelopeId" {{ describedby("envelope_id") }}>
           {% for envelope in envelopes %}
           <option value="{{ envelope.id }}" {% if values.get("envelope_id") == envelope.id | string %}selected{% endif %}>{{ envelope.name }}</option>
           {% endfor %}

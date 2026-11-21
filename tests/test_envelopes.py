@@ -368,3 +368,31 @@ def test_csv_export_names_the_envelope_of_each_purchase(client: TestClient) -> N
         "PEA Boursorama",  # 12/09/2023
         "Compte par défaut",  # 05/01/2024
     ]
+
+
+def test_envelopes_export_holds_every_property(client: TestClient) -> None:
+    client.post("/settings/envelopes", data={**PEA, **PEA_COSTS})
+    response = client.get("/export/envelopes.csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment" in response.headers["content-disposition"]
+
+    header, default, pea = response.text.strip().split("\n")
+    assert header == (
+        "envelope_id,name,envelope_type,broker,opening_date,management_fee_pct,custody_fee_pct,"
+        "custody_fee_per_position_eur,account_fee_eur,order_fee_pct,order_fee_min_eur,"
+        "entry_fee_pct,exit_tax_rate_before_pct,exit_tax_threshold_years,"
+        "exit_tax_rate_after_pct,created_at"
+    )
+    assert pea.startswith(
+        "2,PEA Boursorama,pea,Boursorama,2019-02-04,,0.1,2.0,,0.5,1.99,,31.4,5,18.6,"
+    )
+    assert default.startswith("1,Compte par défaut,cto,,,,,,,,,,,,,")
+    assert 'href="/export/envelopes.csv"' in client.get("/settings").text
+
+
+def test_transactions_export_gives_the_ongoing_charges_of_the_asset(client: TestClient) -> None:
+    client.post("/lots", data={**EUR_ETF_LOT, "ongoing_charges_pct": "0,2"})
+    header, row = client.get("/export/transactions.csv").text.strip().split("\n")
+    columns = header.split(",")
+    assert row.split(",")[columns.index("ongoing_charges_pct")] == "0.2"

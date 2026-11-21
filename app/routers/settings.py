@@ -151,12 +151,10 @@ def _envelope_values(envelope: Envelope) -> dict[str, str]:
 
 def _default_values(envelope_type: str) -> dict[str, str]:
     """Form values suggested by an envelope type: its exit tax (fees have no default)."""
-    tax = envelopes.DEFAULT_EXIT_TAX[envelope_type]
+    defaults = envelopes.default_exit_tax_fields(envelope_type)
     return {
         "envelope_type": envelope_type,
-        "exit_tax_rate_before_pct": format_input_number(tax.rate_before_pct if tax else None),
-        "exit_tax_threshold_years": format_input_number(tax.threshold_years if tax else None),
-        "exit_tax_rate_after_pct": format_input_number(tax.rate_after_pct if tax else None),
+        **{name: format_input_number(value) for name, value in defaults.items()},
     }
 
 

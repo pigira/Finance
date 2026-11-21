@@ -186,6 +186,9 @@ def test_annual_cost_adds_every_fee_shape() -> None:
 
     # (0.5 + 0.1 + 0.20) % of 6 000 = 48, + 2 per line, + 30 x 6 000 / 10 000 = 18
     assert first.annual_cost_eur == approx(68.00)
+    # of which the Envelope charges 36 + 2 + 18 and the Asset's Ongoing charges 12
+    assert first.annual_envelope_fees_eur == approx(56.00)
+    assert first.annual_ongoing_charges_eur == approx(12.00)
     # (0.5 + 0.1) % of 4 000 = 24, + 2 per line, + 30 x 4 000 / 10 000 = 12
     assert second.annual_cost_eur == approx(38.00)
 
@@ -278,3 +281,27 @@ def test_exit_tax_and_exit_cost_are_unknown_without_tax_rates() -> None:
     assert only.order_fee_eur == 5.0
     assert only.exit_tax_eur is None
     assert only.exit_cost_eur is None
+
+
+def test_a_total_with_an_unknown_exit_tax_is_a_lower_bound() -> None:
+    gain_of_1000 = [calc.Position(value_eur=6000.0, cost_eur=5000.0)]
+    (taxed,) = calc.estimate_costs(
+        gain_of_1000,
+        calc.EnvelopeCosts(order_fee_min_eur=5.0, exit_tax=calc.ExitTax(rate_before_pct=30.0)),
+        OPENED,
+        TODAY,
+    )
+    (untaxed,) = calc.estimate_costs(
+        gain_of_1000, calc.EnvelopeCosts(order_fee_min_eur=5.0), OPENED, TODAY
+    )
+    assert taxed.exit_tax_eur == approx(298.50)  # 30 % of (1 000 - 5)
+    assert taxed.exit_tax_complete
+
+    # Known part 298.50, plus a tax nobody filled in: at least 298.50 + 5 + 5.
+    total = calc.add_up_costs([taxed, untaxed])
+    assert total.exit_tax_eur == approx(298.50)
+    assert total.exit_cost_eur == approx(308.50)
+    assert not total.exit_tax_complete
+
+    # Nothing known at all: still unknown, not a lower bound of 0.
+    assert calc.add_up_costs([untaxed, untaxed]).exit_tax_eur is None

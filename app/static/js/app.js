@@ -329,6 +329,10 @@
         fxSource: initial.fxSource,
         isEdit: initial.isEdit,
         knownAssets: initial.knownAssets,
+        envelopeId: initial.envelopeId,
+        envelopeFees: initial.envelopeFees,
+        feesTyped: initial.feesTyped,
+        feesSuggested: false,
 
         init() {
           // A rate belongs to one currency: always fetch a new one when it changes.
@@ -341,6 +345,31 @@
             const typedByUser = this.fxSource === "manual" && String(this.fxRate).trim() !== "";
             if (this.isForeign && dateIsComplete && !typedByUser) this.reloadFxRate();
           });
+          ["quantity", "unitPrice", "fxRate", "currency", "envelopeId"].forEach((name) => {
+            this.$watch(name, () => this.suggestFees());
+          });
+        },
+
+        // Fees of a new purchase from its envelope's schedule, until the user types some:
+        // max(order fee % x amount, minimum) + entry fee % x amount, in the asset currency.
+        // The minimum is in EUR: converted with the purchase rate (units per 1 EUR).
+        suggestFees() {
+          if (this.feesTyped) return;
+          const schedule = this.envelopeFees[this.envelopeId];
+          const quantity = parseFrenchNumber(this.quantity);
+          const unitPrice = parseFrenchNumber(this.unitPrice);
+          if (!schedule || quantity === null || unitPrice === null) return;
+
+          const amount = quantity * unitPrice;
+          let minimum = schedule.orderMinEur;
+          if (this.isForeign) {
+            const rate = parseFrenchNumber(this.fxRate);
+            minimum = rate !== null && rate > 0 ? minimum * rate : 0;
+          }
+          const fee =
+            Math.max((schedule.orderPct / 100) * amount, minimum) + (schedule.entryPct / 100) * amount;
+          this.fees = fee > 0 ? String(Math.round(fee * 100) / 100).replace(".", ",") : "";
+          this.feesSuggested = fee > 0;
         },
 
         // Assets already known for the ISIN being typed (same ISIN, any exchange).

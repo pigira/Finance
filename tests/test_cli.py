@@ -9,7 +9,7 @@ from app import refresh, seed_demo
 from app.config import get_settings
 from app.db import make_engine, make_session_factory
 from app.isin import is_valid_isin
-from app.models import Asset, Transaction
+from app.models import Asset, Envelope, Transaction
 from app.services.portfolio import build_portfolio
 
 
@@ -52,3 +52,16 @@ def test_seed_demo_then_refresh(cli_database: None, capsys: pytest.CaptureFixtur
 
 def test_demo_fund_isin_is_valid() -> None:
     assert is_valid_isin(seed_demo.DEMO_FUND_ISIN)
+
+
+def test_demo_envelopes_get_the_exit_tax_of_their_type(cli_database: None) -> None:
+    assert seed_demo.main() == 0
+    settings = get_settings()
+    with make_session_factory(make_engine(settings.database_url))() as session:
+        taxes = {
+            envelope.name: envelope.exit_tax_rate_before_pct
+            for envelope in session.scalars(select(Envelope))
+        }
+    assert taxes["CTO Courtier A"] == 31.4
+    assert taxes["CTO Courtier B"] == 31.4
+    assert taxes["PER employeur"] is None  # no default for a PER

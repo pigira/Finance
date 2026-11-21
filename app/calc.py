@@ -38,6 +38,9 @@ GLOSSARY.md). Percentages are given as typed (0.5 means 0.5 %), amounts in EUR.
     exit tax    = rate x max(0, sum over the Envelope of (value - cost - order fee)),
                   split over the Positions with a gain, in proportion to that gain
     exit cost   = order fee + its share of the exit tax
+
+An Envelope whose exit tax is not filled in has an unknown tax (None), never 0. A
+total over several Envelopes keeps the part that is known, flagged as incomplete.
 """
 
 from collections.abc import Sequence
@@ -261,9 +264,18 @@ class EnvelopeCosts:
 
 @dataclass(frozen=True)
 class CostEstimate:
-    annual_cost_eur: float
+    annual_envelope_fees_eur: float  # what the Envelope charges each year
+    annual_ongoing_charges_eur: float  # what the Asset itself charges each year
     order_fee_eur: float  # selling the whole Position in one order
-    exit_tax_eur: float | None  # its share of the Envelope's Latent exit tax; None if unknown
+    # Its share of the Envelope's Latent exit tax. None: unknown. For a total, the part
+    # that is known, and exit_tax_complete says whether some part was unknown: the total
+    # is then a lower bound (an unknown tax is never negative).
+    exit_tax_eur: float | None
+    exit_tax_complete: bool = True
+
+    @property
+    def annual_cost_eur(self) -> float:
+        return self.annual_envelope_fees_eur + self.annual_ongoing_charges_eur
 
     @property
     def exit_cost_eur(self) -> float | None:
@@ -277,10 +289,8 @@ def estimate_costs(
 ) -> list[CostEstimate]:
     """Estimated costs of each Position of one Envelope, in the order given."""
     envelope_value = sum(position.value_eur for position in positions)
-    annual_costs = [
-        (costs.management_fee_pct + costs.custody_fee_pct + position.ongoing_charges_pct)
-        / 100
-        * position.value_eur
+    envelope_fees = [
+        (costs.management_fee_pct + costs.custody_fee_pct) / 100 * position.value_eur
         + costs.custody_fee_per_position_eur
         + costs.account_fee_eur * safe_ratio(position.value_eur, envelope_value)
         for position in positions
@@ -291,8 +301,16 @@ def estimate_costs(
     ]
     exit_taxes = _exit_tax_shares(positions, order_fees, costs.exit_tax, opened_on, today)
     return [
-        CostEstimate(annual_cost_eur=annual, order_fee_eur=fee, exit_tax_eur=tax)
-        for annual, fee, tax in zip(annual_costs, order_fees, exit_taxes, strict=True)
+        CostEstimate(
+            annual_envelope_fees_eur=envelope_fee,
+            annual_ongoing_charges_eur=position.ongoing_charges_pct / 100 * position.value_eur,
+            order_fee_eur=fee,
+            exit_tax_eur=tax,
+            exit_tax_complete=tax is not None,
+        )
+        for position, envelope_fee, fee, tax in zip(
+            positions, envelope_fees, order_fees, exit_taxes, strict=True
+        )
     ]
 
 
@@ -316,10 +334,15 @@ def _exit_tax_shares(
 
 
 def add_up_costs(estimates: Sequence[CostEstimate]) -> CostEstimate:
-    """Costs of several Positions together; one unknown exit tax makes the total unknown."""
-    taxes = [estimate.exit_tax_eur for estimate in estimates]
+    """Costs of several Positions together. An unknown exit tax leaves the known part as a
+    lower bound (exit_tax_complete False); the tax is unknown only if no part is known."""
+    known_taxes = [e.exit_tax_eur for e in estimates if e.exit_tax_eur is not None]
     return CostEstimate(
-        annual_cost_eur=sum(estimate.annual_cost_eur for estimate in estimates),
+        annual_envelope_fees_eur=sum(estimate.annual_envelope_fees_eur for estimate in estimates),
+        annual_ongoing_charges_eur=sum(
+            estimate.annual_ongoing_charges_eur for estimate in estimates
+        ),
         order_fee_eur=sum(estimate.order_fee_eur for estimate in estimates),
-        exit_tax_eur=None if None in taxes else sum(tax for tax in taxes if tax is not None),
+        exit_tax_eur=sum(known_taxes) if known_taxes or not estimates else None,
+        exit_tax_complete=all(estimate.exit_tax_complete for estimate in estimates),
     )

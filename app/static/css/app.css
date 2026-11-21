@@ -549,7 +549,7 @@ input:focus-visible, select:focus-visible { outline-offset: 0; border-color: var
 .toolbar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px 20px; }
 
 /* KPI cards */
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
 .kpi { display: flex; flex-direction: column; gap: 6px; }
 .kpi-label { color: var(--text-2); font-size: 0.8125rem; font-weight: 550; }
 .kpi-label-note { color: var(--muted); font-weight: 400; }
@@ -617,6 +617,9 @@ input:focus-visible, select:focus-visible { outline-offset: 0; border-color: var
 }
 .positions td { padding: 14px 12px; text-align: right; vertical-align: top; }
 .positions .col-asset, .lots .col-date { text-align: left; }
+/* Estimated costs: two short figures; their headers may wrap to keep the table narrow. */
+.positions th.col-cost { white-space: normal; min-width: 5.5em; }
+.positions td.col-cost { white-space: nowrap; }
 
 /* "Par compte": a header row and a subtotal row frame each Envelope's Positions. */
 .positions .group-head th {
@@ -742,9 +745,9 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
    scrolls sideways inside its card. "position: relative" makes the card the
    reference of the visually hidden (absolutely positioned) labels inside the
    table; without it they would stretch the page itself. */
-@media (max-width: 1100px) and (min-width: 761px) {
+@media (max-width: 1240px) and (min-width: 761px) {
   .positions-card { position: relative; overflow-x: auto; }
-  .positions { min-width: 860px; }
+  .positions { min-width: 1000px; }  /* nine columns, with the estimated costs */
 }
 
 /* Narrow content: the legend moves under the donut. */

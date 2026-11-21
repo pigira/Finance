@@ -212,6 +212,7 @@ def _render_form(
     lot: Transaction | None = None,
 ) -> HTMLResponse:
     known_assets = [_asset_values(asset) for asset in lots.all_assets(session)]
+    envelope_list = envelopes.all_envelopes(session)
     # Initial state of the Alpine component that drives the form (see app.js).
     form_state: dict[str, Any] = {
         "isin": values.get("isin", ""),
@@ -230,6 +231,17 @@ def _render_form(
         "fxSource": values.get("fx_source", ""),
         "isEdit": lot is not None,
         "knownAssets": known_assets,
+        # Fees are suggested from the envelope's schedule on a new purchase, until typed.
+        "envelopeId": values.get("envelope_id", ""),
+        "envelopeFees": {
+            str(envelope.id): {
+                "orderPct": envelope.order_fee_pct or 0,
+                "orderMinEur": envelope.order_fee_min_eur or 0,
+                "entryPct": envelope.entry_fee_pct or 0,
+            }
+            for envelope in envelope_list
+        },
+        "feesTyped": lot is not None or values.get("fees", "") != "",
     }
     context = page_context(
         request,
@@ -239,7 +251,7 @@ def _render_form(
         errors=errors or {},
         lot=lot,
         known_assets=known_assets,
-        envelopes=envelopes.all_envelopes(session),
+        envelopes=envelope_list,
         form_state=form_state,
         today_iso=local_today(request.app.state.settings.display_timezone).isoformat(),
         **_fx_field_context(values),

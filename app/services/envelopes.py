@@ -64,6 +64,16 @@ def last_used_envelope(session: Session) -> Envelope | None:
     return session.scalar(select(Envelope).order_by(Envelope.id).limit(1))
 
 
+def default_exit_tax_fields(envelope_type: str) -> dict[str, float | None]:
+    """The exit-tax fields an envelope type suggests, by their form and column names."""
+    tax = DEFAULT_EXIT_TAX[envelope_type]
+    return {
+        "exit_tax_rate_before_pct": tax.rate_before_pct if tax else None,
+        "exit_tax_threshold_years": tax.threshold_years if tax else None,
+        "exit_tax_rate_after_pct": tax.rate_after_pct if tax else None,
+    }
+
+
 def effective_opening_date(envelope: Envelope) -> date | None:
     """The opening date typed in; without one, the date of its oldest purchase."""
     if envelope.opening_date is not None:

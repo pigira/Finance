@@ -12,6 +12,32 @@
         hx-confirm="Supprimer l'achat du {{ lot.trade_date | date_fr }} ({{ lot.quantity | qty }} × {{ asset.name }}) ?">{{ icon("trash") }}</button>
 {%- endmacro %}
 
+{# Estimated costs (calc.CostEstimate). The exit tax is unknown (None) for an Envelope
+   whose tax is not filled in; a total that misses one is a lower bound ("≥"). #}
+{% macro annual_cost_cell(costs) -%}
+<td data-label="Coût annuel" class="col-cost">
+  <span class="has-tip" tabindex="0"
+        data-tip="Frais du compte : {{ costs.annual_envelope_fees_eur | money }} · Frais courants : {{ costs.annual_ongoing_charges_eur | money }}">{{ costs.annual_cost_eur | money }}</span>
+</td>
+{%- endmacro %}
+
+{% macro exit_cost_text(costs) -%}
+{% if costs.exit_tax_eur is none %}—{% elif not costs.exit_tax_complete %}≥ {{ costs.exit_cost_eur | money }}{% else %}{{ costs.exit_cost_eur | money }}{% endif %}
+{%- endmacro %}
+
+{% macro exit_cost_tip(costs, untaxed) -%}
+Courtage à la vente : {{ costs.order_fee_eur | money }}
+{%- if costs.exit_tax_eur is none %} · Fiscalité non renseignée pour ce compte
+{%- else %} · Impôt latent : {{ costs.exit_tax_eur | money }}
+{%- if not costs.exit_tax_complete %} · hors fiscalité de : {{ untaxed | join(", ") }}{% endif %} · Abattements ignorés : c'est un majorant{% endif %}
+{%- endmacro %}
+
+{% macro exit_cost_cell(costs, untaxed) -%}
+<td data-label="Coût de sortie" class="col-cost">
+  <span class="has-tip" tabindex="0" data-tip="{{ exit_cost_tip(costs, untaxed) }}">{{ exit_cost_text(costs) }}</span>
+</td>
+{%- endmacro %}
+
 {% macro positions_head() -%}
   <thead>
     <tr>
@@ -21,6 +47,8 @@
       <th scope="col">Dernier cours</th>
       <th scope="col" aria-sort="descending"><button type="button" class="sort" data-sort="value">Valeur</button></th>
       <th scope="col"><button type="button" class="sort" data-sort="pl">Plus-value latente</button></th>
+      <th scope="col" class="col-cost"><button type="button" class="sort" data-sort="annualCost" title="Frais du compte et frais courants de l'actif, sur un an, à la valeur actuelle">Coût annuel</button></th>
+      <th scope="col" class="col-cost"><button type="button" class="sort" data-sort="exitCost" title="Courtage et impôt si vous vendiez tout aujourd'hui">Coût de sortie</button></th>
       <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
     </tr>
   </thead>
@@ -34,7 +62,8 @@
   {% set result = position.result %}
   <tbody class="position" {% if group %}data-group="{{ group.id }}" {% endif %}data-name="{{ asset.name | lower }}" data-quantity="{{ result.quantity }}"
          data-pru="{{ result.pru_eur }}" data-value="{{ result.value_eur }}"
-         data-pl-eur="{{ result.pl_eur }}" data-pl-pct="{{ result.pl_pct }}">
+         data-pl-eur="{{ result.pl_eur }}" data-pl-pct="{{ result.pl_pct }}"
+         data-annual-cost="{{ position.costs.annual_cost_eur }}" data-exit-cost="{{ position.costs.exit_cost_eur or 0 }}">
     <tr class="position-row">
       <td class="col-asset">
         <div class="asset">
@@ -97,6 +126,8 @@
       </td>
       <td data-label="Valeur">{{ result.value_eur | money }}</td>
       <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(result, position.is_foreign) }}</td>
+      {{ annual_cost_cell(position.costs) }}
+      {{ exit_cost_cell(position.costs, position.envelopes_without_exit_tax) }}
       <td class="col-actions">
         <div class="actions">
           <a class="icon-btn" href="/lots/new?asset_id={{ asset.id }}" title="Ajouter un achat de cet actif"
@@ -107,7 +138,7 @@
     </tr>
     {% if position.has_several_lots %}
     <tr class="lots-row" id="lots-{{ row_key }}" x-data x-show="$store.ui.isOpen('{{ row_key }}')" x-cloak>
-      <td colspan="7">
+      <td colspan="9">
         <table class="lots">
           <caption class="sr-only">Achats de {{ asset.name }}</caption>
           <thead>
@@ -218,13 +249,21 @@
     </p>
   </article>
   {% endif %}
+  <article class="card kpi">
+    <h2 class="kpi-label">Coûts estimés</h2>
+    <p class="kpi-value">{{ view.costs.annual_cost_eur | money }} / an</p>
+    <p class="kpi-sub">
+      <span class="has-tip" tabindex="0" data-tip="{{ exit_cost_tip(view.costs, view.envelopes_without_exit_tax) }}">sortie {{ exit_cost_text(view.costs) }}</span>
+      · non déduits de la plus-value
+    </p>
+  </article>
 </section>
 
 <section class="card allocation" x-data="allocation" aria-labelledby="allocation-title">
   <header class="card-header">
     <h2 id="allocation-title" class="card-title">Répartition</h2>
     <div class="segmented" role="group" aria-label="Répartition par">
-      {% for key, label in [("asset", "Par actif"), ("type", "Par type"), ("currency", "Par devise")] %}
+      {% for key, label in [("asset", "Par actif"), ("type", "Par type"), ("currency", "Par devise"), ("envelope", "Par compte")] %}
       <button type="button" @click="show('{{ key }}')" :aria-pressed="tab === '{{ key }}'"
               aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>
       {% endfor %}
@@ -284,7 +323,7 @@
     {% set envelope = group.envelope %}
     <tbody class="group-head" data-group="{{ envelope.id }}">
       <tr>
-        <th scope="rowgroup" colspan="7">
+        <th scope="rowgroup" colspan="9">
           <span class="group-name">{{ envelope.name }}</span>
           <span class="badge">{{ envelope_type_labels[envelope.envelope_type] }}</span>
         </th>
@@ -302,6 +341,8 @@
           <span class="subtotal-note">investi {{ group.totals.cost_eur | money }}</span>
         </td>
         <td data-label="Plus-value latente" class="col-pl">{{ pl(group.totals.pl_eur, group.totals.pl_pct) }}</td>
+        {{ annual_cost_cell(group.costs) }}
+        {{ exit_cost_cell(group.costs, [envelope.name] if envelope.exit_tax_rate_before_pct is none else []) }}
         <td class="col-actions"></td>
       </tr>
     </tbody>
