@@ -61,7 +61,6 @@ def make_session_factory(engine: Engine) -> sessionmaker[Session]:
 def init_db(engine: Engine) -> None:
     """Create missing tables, migrate an older schema and record the version (idempotent)."""
     from app import models  # imported here so that every model is registered on Base
-    from app.services import envelopes
 
     with engine.connect() as connection:
         # pysqlite only opens a transaction before DML. Open it now, so that the
@@ -72,13 +71,15 @@ def init_db(engine: Engine) -> None:
             _set_aside_v1_transactions(connection)
         Base.metadata.create_all(connection)
         if version == 1:
-            _move_v1_brokers_to_envelopes(connection, envelopes.DEFAULT_ENVELOPE_NAME)
+            _move_v1_brokers_to_envelopes(connection, models.DEFAULT_ENVELOPE_NAME)
         connection.commit()
 
     with Session(engine) as session:
         if session.scalar(select(models.SchemaVersion)) is None:
             session.add(models.SchemaVersion(version=SCHEMA_VERSION))
-        envelopes.ensure_default_envelope(session)
+        if session.scalar(select(models.Envelope.id).limit(1)) is None:
+            # A purchase needs an envelope: never leave a database without one.
+            session.add(models.Envelope(name=models.DEFAULT_ENVELOPE_NAME, envelope_type="cto"))
         session.commit()
 
 

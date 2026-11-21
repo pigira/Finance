@@ -19,6 +19,7 @@ from pydantic import (
 
 from app.calc import EUR
 from app.isin import is_valid_isin, normalize_isin
+from app.models import ENVELOPE_TYPES
 from app.providers.base import is_iso_currency, parse_currency_input
 
 # fx_source values that mean "the rate came from a provider and was not edited".
@@ -60,6 +61,7 @@ RequiredDecimal = Annotated[float, BeforeValidator(parse_decimal)]
 OptionalDecimal = Annotated[float | None, BeforeValidator(parse_decimal)]
 DecimalOrZero = Annotated[float, BeforeValidator(parse_decimal_or_zero)]
 DateInput = Annotated[date, BeforeValidator(parse_date)]
+OptionalDate = Annotated[date | None, BeforeValidator(lambda v: parse_date(v) if v else None)]
 
 
 class LotForm(BaseModel):
@@ -188,14 +190,11 @@ class LotForm(BaseModel):
         return self
 
 
-OptionalDate = Annotated[date | None, BeforeValidator(lambda v: parse_date(v) if v else None)]
-
-
 class EnvelopeForm(BaseModel):
     """An envelope ("compte") as submitted from Paramètres > Comptes."""
 
     name: str
-    envelope_type: Literal["cto", "pea", "pea_pme", "assurance_vie", "per"]
+    envelope_type: Literal[ENVELOPE_TYPES]
     broker: str | None = None
     opening_date: OptionalDate = None
 

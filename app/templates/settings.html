@@ -33,7 +33,7 @@
     <p class="flash flash-error" role="alert">{{ icon("alert") }}{{ envelope_error }}</p>
     {% endif %}
     <ul class="envelope-list">
-      {% for envelope in envelope_rows %}
+      {% for envelope in envelopes %}
       <li class="envelope-item">
         <div>
           <strong>{{ envelope.name }}</strong>

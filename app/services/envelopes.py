@@ -5,10 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.models import Envelope, Transaction
 from app.schemas import EnvelopeForm
+from app.services.errors import FormError
 
-DEFAULT_ENVELOPE_NAME = "Compte par défaut"
-
-# French labels, in the order the form offers them.
+# French labels of models.ENVELOPE_TYPES, in the order the form offers them.
 ENVELOPE_TYPE_LABELS = {
     "cto": "CTO",
     "pea": "PEA",
@@ -18,16 +17,8 @@ ENVELOPE_TYPE_LABELS = {
 }
 
 
-class EnvelopeError(Exception):
-    """A business rule refused the form. `field` says where to show `message`."""
-
-    def __init__(self, field: str, message: str) -> None:
-        super().__init__(message)
-        self.field = field
-        self.message = message
-
-
 def all_envelopes(session: Session) -> list[Envelope]:
+    """Every envelope, by name (Paramètres and the purchase form list them all)."""
     return list(session.scalars(select(Envelope).order_by(Envelope.name)))
 
 
@@ -41,13 +32,8 @@ def last_used_envelope(session: Session) -> Envelope | None:
     return session.scalar(select(Envelope).order_by(Envelope.id).limit(1))
 
 
-def ensure_default_envelope(session: Session) -> None:
-    """A purchase needs an envelope: make sure at least one exists."""
-    if session.scalar(select(Envelope.id).limit(1)) is None:
-        session.add(Envelope(name=DEFAULT_ENVELOPE_NAME, envelope_type="cto"))
-
-
 def create_envelope(session: Session, form: EnvelopeForm) -> Envelope:
+    """Add an envelope. Names are unique."""
     _check_name_is_free(session, form.name)
     envelope = Envelope()
     _apply_fields(envelope, form)
@@ -57,12 +43,13 @@ def create_envelope(session: Session, form: EnvelopeForm) -> Envelope:
 
 
 def update_envelope(session: Session, envelope: Envelope, form: EnvelopeForm) -> Envelope:
+    """Edit an envelope. Its opening date cannot come after one of its purchases."""
     _check_name_is_free(session, form.name, own_id=envelope.id)
     oldest = session.scalar(
         select(func.min(Transaction.trade_date)).where(Transaction.envelope_id == envelope.id)
     )
     if form.opening_date is not None and oldest is not None and oldest < form.opening_date:
-        raise EnvelopeError("opening_date", "Un achat de ce compte est antérieur à cette date")
+        raise FormError("opening_date", "Un achat de ce compte est antérieur à cette date")
     _apply_fields(envelope, form)
     session.commit()
     return envelope
@@ -71,13 +58,13 @@ def update_envelope(session: Session, envelope: Envelope, form: EnvelopeForm) ->
 def delete_envelope(session: Session, envelope: Envelope) -> None:
     """Only an empty envelope can go, and never the last one."""
     if envelope.transactions:
-        raise EnvelopeError(
-            "delete",
+        raise FormError(
+            "form",
             f"« {envelope.name} » contient des achats : déplacez-les vers un autre compte "
             "ou supprimez-les d'abord.",
         )
     if session.scalar(select(func.count()).select_from(Envelope)) == 1:
-        raise EnvelopeError("delete", "Il faut au moins un compte pour enregistrer un achat.")
+        raise FormError("form", "Il faut au moins un compte pour enregistrer un achat.")
     session.delete(envelope)
     session.commit()
 
@@ -85,7 +72,7 @@ def delete_envelope(session: Session, envelope: Envelope) -> None:
 def _check_name_is_free(session: Session, name: str, own_id: int | None = None) -> None:
     other = session.scalar(select(Envelope).where(Envelope.name == name))
     if other is not None and other.id != own_id:
-        raise EnvelopeError("name", "Un compte porte déjà ce nom")
+        raise FormError("name", "Un compte porte déjà ce nom")
 
 
 def _apply_fields(envelope: Envelope, form: EnvelopeForm) -> None:

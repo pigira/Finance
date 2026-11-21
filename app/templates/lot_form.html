@@ -181,7 +181,7 @@
       <div class="field">
         <label for="envelope_id">Compte</label>
         <select id="envelope_id" name="envelope_id" {{ describedby("envelope_id") }}>
-          {% for envelope in envelope_choices %}
+          {% for envelope in envelopes %}
           <option value="{{ envelope.id }}" {% if values.get("envelope_id") == envelope.id | string %}selected{% endif %}>{{ envelope.name }}</option>
           {% endfor %}
         </select>

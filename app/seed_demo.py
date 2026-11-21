@@ -126,7 +126,7 @@ def main() -> int:
             print("Point DATABASE_URL at a new file to create a separate demo database.")
             return 1
 
-        envelope_ids: dict[object, int] = {}
+        envelope_ids: dict[str, int] = {}
         for values in DEMO_ENVELOPES:
             envelope: Envelope = envelopes.create_envelope(
                 session, EnvelopeForm.model_validate(values)
@@ -134,7 +134,7 @@ def main() -> int:
             envelope_ids[envelope.name] = envelope.id
 
         for values in DEMO_LOTS:
-            lot = {**values, "envelope_id": envelope_ids[values["envelope"]]}
+            lot = {**values, "envelope_id": envelope_ids[str(values["envelope"])]}
             transaction = lots.create_lot(session, LotForm.model_validate(lot), settings)
             if transaction.asset.manual_price:
                 pricing.set_manual_price(

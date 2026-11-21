@@ -1,19 +1,15 @@
-"""Full pages: portfolio dashboard, settings, CSV export."""
+"""Full pages: portfolio dashboard, CSV export. Paramètres lives in settings.py."""
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, Response
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.db import get_session
-from app.models import Asset, Transaction
-from app.providers.base import FxProvider, PriceProvider
-from app.services import envelopes
 from app.services.export import transactions_csv
 from app.services.portfolio import build_portfolio
 from app.timeutil import local_today
-from app.web import get_fx_provider, get_price_provider, get_settings, page_context, render
+from app.web import get_settings, page_context, render
 
 router = APIRouter()
 
@@ -26,40 +22,6 @@ def portfolio_page(
 ) -> HTMLResponse:
     view = build_portfolio(session, settings)
     return render(request, "portfolio.html", page_context(request, session, "portfolio", view=view))
-
-
-@router.get("/settings", response_class=HTMLResponse)
-def settings_page(
-    request: Request,
-    session: Session = Depends(get_session),
-    price_provider: PriceProvider = Depends(get_price_provider),
-    fx_provider: FxProvider = Depends(get_fx_provider),
-) -> HTMLResponse:
-    return render_settings(request, session, price_provider, fx_provider)
-
-
-def render_settings(
-    request: Request,
-    session: Session,
-    price_provider: PriceProvider,
-    fx_provider: FxProvider,
-    *,
-    envelope_error: str | None = None,
-) -> HTMLResponse:
-    """The settings page; `envelope_error` explains a refused change to the envelopes."""
-    context = page_context(
-        request,
-        session,
-        "settings",
-        price_provider_name=price_provider.name,
-        fx_provider_name=fx_provider.name,
-        asset_count=session.scalar(select(func.count()).select_from(Asset)),
-        transaction_count=session.scalar(select(func.count()).select_from(Transaction)),
-        envelope_rows=envelopes.all_envelopes(session),
-        envelope_types=envelopes.ENVELOPE_TYPE_LABELS,
-        envelope_error=envelope_error,
-    )
-    return render(request, "settings.html", context, status_code=422 if envelope_error else 200)
 
 
 @router.get("/export/transactions.csv")
