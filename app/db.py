@@ -128,6 +128,13 @@ def _move_v1_brokers_to_envelopes(connection: Connection, default_name: str) -> 
         ),
         {"name": default_name},
     )
+    # Never drop the old table unless every purchase made it across.
+    before = connection.scalar(text("SELECT count(*) FROM transactions_v1"))
+    after = connection.scalar(text("SELECT count(*) FROM transactions"))
+    if after != before:
+        raise RuntimeError(
+            f"Migration to schema 2 copied {after} of {before} purchases; nothing was changed."
+        )
     connection.execute(text("DROP TABLE transactions_v1"))
     connection.execute(text("UPDATE schema_version SET version = 2"))
 
