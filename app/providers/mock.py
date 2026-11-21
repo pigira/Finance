@@ -142,11 +142,16 @@ class MockFxProvider(FxProvider):
 
     name = "mock"
 
+    def __init__(self, today: date | None = None) -> None:
+        # The day whose rate is "current". None: the real date (demo, offline mode);
+        # tests that freeze time give it, so that their rates never depend on the clock.
+        self._today = today
+
     def get_rate(self, currency: str, on_date: date) -> FxQuote | None:
         if currency not in _FX_NOW:
             raise ProviderError(f"mock: unknown currency {currency}")
 
-        today = utc_now().date()
+        today = self._today or utc_now().date()
         effective_day = _last_business_day(min(on_date, today))
         rate = _FX_NOW[currency]
         if (today - effective_day).days > 4:

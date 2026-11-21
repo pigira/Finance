@@ -16,7 +16,7 @@ from app.providers.base import (
     parse_currency_input,
     quoted_currency_code,
 )
-from app.providers.mock import MockProvider
+from app.providers.mock import MockFxProvider, MockProvider
 from app.providers.yahoo import YahooFxProvider, YahooProvider
 
 # ---- currency units -----------------------------------------------------------
@@ -34,6 +34,17 @@ def test_pence_quotes_are_normalized_to_pounds() -> None:
 
 
 # ---- mock ---------------------------------------------------------------------
+
+
+def test_mock_fx_rates_depend_on_the_given_day_not_on_the_clock() -> None:
+    # Whatever the real date, a provider told that today is Monday 16/11/2026
+    # answers that day with the "current" rate, and 30 days earlier with a past one.
+    provider = MockFxProvider(today=date(2026, 11, 16))
+    current = provider.get_rate("USD", date(2026, 11, 16))
+    assert current is not None and current.rate == 1.10
+
+    past = provider.get_rate("USD", date(2026, 10, 16))
+    assert past is not None and past.rate != 1.10
 
 
 def test_mock_provider_is_deterministic() -> None:

@@ -17,6 +17,8 @@ from app.services.portfolio import build_portfolio
 from tests.conftest import EUR_ETF_LOT, GBX_ETF_LOT, MSFT_LOT_A, MSFT_LOT_B, add_lot
 
 NOON = datetime(2026, 11, 16, 11, 0)  # 12:00 in Amsterdam
+# The mock FX provider lives on the same day, whatever the real date (#4).
+TODAY = NOON.date()
 
 
 class ScriptedProvider(PriceProvider):
@@ -64,7 +66,7 @@ def test_refresh_upserts_one_row_per_asset_and_per_day(
     two_assets: None, session: Session, settings: Settings
 ) -> None:
     provider = ScriptedProvider({"MSFT": usd_quote(500.0), "IWDA.AS": eur_quote(95.0)})
-    fx = MockFxProvider()
+    fx = MockFxProvider(today=TODAY)
 
     report = pricing.refresh_all(session, provider, fx, settings, force=True, now=NOON)
     assert (report.prices_updated, report.prices_failed, report.fx_updated) == (2, 0, 1)
@@ -94,7 +96,7 @@ def test_on_demand_refresh_respects_the_ttl(
     two_assets: None, session: Session, settings: Settings
 ) -> None:
     provider = ScriptedProvider({"MSFT": usd_quote(500.0), "IWDA.AS": eur_quote(95.0)})
-    fx = MockFxProvider()
+    fx = MockFxProvider(today=TODAY)
 
     pricing.refresh_all(session, provider, fx, settings, now=NOON)
     assert sorted(provider.asked) == ["IWDA.AS", "MSFT"]
@@ -120,7 +122,7 @@ def test_one_failing_ticker_does_not_affect_the_others(
     two_assets: None, session: Session, settings: Settings
 ) -> None:
     provider = ScriptedProvider({"MSFT": usd_quote(500.0), "IWDA.AS": eur_quote(95.0)})
-    fx = MockFxProvider()
+    fx = MockFxProvider(today=TODAY)
     pricing.refresh_all(session, provider, fx, settings, force=True, now=NOON)
 
     # Next refresh: MSFT times out, the ETF moves.
@@ -156,7 +158,7 @@ def test_unexpected_provider_exception_is_contained(
     provider = ScriptedProvider(
         {"IWDA.AS": eur_quote(95.0)}, failing={"MSFT": RuntimeError("bug in provider")}
     )
-    report = pricing.refresh_all(session, provider, MockFxProvider(), settings, now=NOON)
+    report = pricing.refresh_all(session, provider, MockFxProvider(today=TODAY), settings, now=NOON)
     assert (report.prices_updated, report.prices_failed) == (1, 1)
     assert "bug in provider" in pricing.price_failures[1].message
 
@@ -167,7 +169,7 @@ def test_failed_tickers_are_not_retried_by_automatic_refreshes(
     provider = ScriptedProvider(
         {"IWDA.AS": eur_quote(95.0)}, failing={"MSFT": ProviderError("unknown ticker")}
     )
-    fx = MockFxProvider()
+    fx = MockFxProvider(today=TODAY)
     pricing.refresh_all(session, provider, fx, settings, now=NOON)
 
     soon = NOON + timedelta(minutes=2)
@@ -189,7 +191,7 @@ def test_no_price_at_all_values_the_position_at_purchase_price(
 ) -> None:
     add_lot(session, settings, MSFT_LOT_A)
     provider = ScriptedProvider({}, failing={"MSFT": ProviderError("down")})
-    pricing.refresh_all(session, provider, MockFxProvider(), settings, now=NOON)
+    pricing.refresh_all(session, provider, MockFxProvider(today=TODAY), settings, now=NOON)
 
     position = build_portfolio(session, settings, now=NOON).consolidated_positions[0]
     assert position.last_price == 400.0
@@ -218,7 +220,7 @@ def test_cached_purchase_date_rate_is_not_mistaken_for_the_current_rate(
     session: Session, settings: Settings
 ) -> None:
     """Regression: prefilling the form caches an old rate with a recent fetch time."""
-    fx = MockFxProvider()
+    fx = MockFxProvider(today=TODAY)
     purchase_day = date(2024, 3, 15)
     old_rate = get_rate_for_date(session, fx, settings, "USD", purchase_day, now=NOON).rate
     assert old_rate != pytest.approx(1.10)
@@ -243,7 +245,9 @@ def test_old_cached_rate_used_as_a_last_resort_is_flagged(
         def get_rate(self, currency, on_date):
             raise ProviderError("FX API down")
 
-    get_rate_for_date(session, MockFxProvider(), settings, "USD", date(2024, 3, 15), now=NOON)
+    get_rate_for_date(
+        session, MockFxProvider(today=TODAY), settings, "USD", date(2024, 3, 15), now=NOON
+    )
     add_lot(session, settings, MSFT_LOT_A)
     pricing.refresh_all(
         session, ScriptedProvider({"MSFT": usd_quote(500.0)}), BrokenFx(), settings, now=NOON
@@ -258,7 +262,11 @@ def test_quote_in_another_currency_is_rejected(session: Session, settings: Setti
     add_lot(session, settings, EUR_ETF_LOT)
     wrong = Quote(ticker="IWDA.AS", price=101.0, currency="USD", price_scale=1.0)
     report = pricing.refresh_all(
-        session, ScriptedProvider({"IWDA.AS": wrong}), MockFxProvider(), settings, now=NOON
+        session,
+        ScriptedProvider({"IWDA.AS": wrong}),
+        MockFxProvider(today=TODAY),
+        settings,
+        now=NOON,
     )
     assert report.prices_failed == 1
     assert price_rows(session) == 0
@@ -271,7 +279,7 @@ def test_quote_unit_corrects_a_wrong_price_scale(session: Session, settings: Set
     asset = session.get(Asset, 1)
     assert asset.price_scale == 1.0
 
-    pricing.refresh_all(session, MockProvider(), MockFxProvider(), settings, now=NOON)
+    pricing.refresh_all(session, MockProvider(), MockFxProvider(today=TODAY), settings, now=NOON)
 
     assert asset.price_scale == 0.01
     position = build_portfolio(session, settings, now=NOON).consolidated_positions[0]
@@ -281,7 +289,7 @@ def test_quote_unit_corrects_a_wrong_price_scale(session: Session, settings: Set
 
 def test_price_older_than_a_day_is_flagged_stale(session: Session, settings: Settings) -> None:
     add_lot(session, settings, EUR_ETF_LOT)
-    pricing.refresh_all(session, MockProvider(), MockFxProvider(), settings, now=NOON)
+    pricing.refresh_all(session, MockProvider(), MockFxProvider(today=TODAY), settings, now=NOON)
 
     fresh_view = build_portfolio(session, settings, now=NOON + timedelta(hours=23))
     fresh = fresh_view.consolidated_positions[0]
