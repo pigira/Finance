@@ -9,6 +9,7 @@ from app.config import Settings
 from app.db import get_session
 from app.models import Asset, Transaction
 from app.providers.base import FxProvider, PriceProvider
+from app.services import envelopes
 from app.services.export import transactions_csv
 from app.services.portfolio import build_portfolio
 from app.timeutil import local_today
@@ -31,10 +32,21 @@ def portfolio_page(
 def settings_page(
     request: Request,
     session: Session = Depends(get_session),
-    settings: Settings = Depends(get_settings),
     price_provider: PriceProvider = Depends(get_price_provider),
     fx_provider: FxProvider = Depends(get_fx_provider),
 ) -> HTMLResponse:
+    return render_settings(request, session, price_provider, fx_provider)
+
+
+def render_settings(
+    request: Request,
+    session: Session,
+    price_provider: PriceProvider,
+    fx_provider: FxProvider,
+    *,
+    envelope_error: str | None = None,
+) -> HTMLResponse:
+    """The settings page; `envelope_error` explains a refused change to the envelopes."""
     context = page_context(
         request,
         session,
@@ -43,8 +55,11 @@ def settings_page(
         fx_provider_name=fx_provider.name,
         asset_count=session.scalar(select(func.count()).select_from(Asset)),
         transaction_count=session.scalar(select(func.count()).select_from(Transaction)),
+        envelope_rows=envelopes.all_envelopes(session),
+        envelope_types=envelopes.ENVELOPE_TYPE_LABELS,
+        envelope_error=envelope_error,
     )
-    return render(request, "settings.html", context)
+    return render(request, "settings.html", context, status_code=422 if envelope_error else 200)
 
 
 @router.get("/export/transactions.csv")

@@ -203,6 +203,7 @@ def test_gbx_lot_is_stored_in_pounds(client: TestClient, session: Session) -> No
 
 def test_update_lot(client: TestClient, session: Session) -> None:
     client.post("/lots", data=MSFT_LOT_A)
+    client.post("/settings/envelopes", data={"name": "CTO Courtier A", "envelope_type": "cto"})
 
     form = client.get("/lots/1/edit").text
     assert 'value="US5949181045"' not in form or "readonly" in form
@@ -216,19 +217,21 @@ def test_update_lot(client: TestClient, session: Session) -> None:
         "quantity": "12",
         "fx_rate": "1,0850",
         "fx_source": "manual",
-        "broker": "Courtier A",
+        "envelope_id": "2",  # moved to another envelope
     }
     response = client.post("/lots/1", data=changed, follow_redirects=False)
     assert response.status_code == 303
 
     session.expire_all()
     lot = session.get(Transaction, 1)
-    assert (lot.quantity, lot.fx_rate, lot.fx_source, lot.broker) == (
+    assert (lot.quantity, lot.fx_rate, lot.fx_source, lot.envelope.name) == (
         12.0,
         1.085,
         "manual",
-        "Courtier A",
+        "CTO Courtier A",
     )
+    # The edit form shows the envelope the lot is in now.
+    assert '<option value="2" selected>CTO Courtier A</option>' in client.get("/lots/1/edit").text
     assert (lot.asset.isin, lot.asset.currency, lot.asset.name) == (
         "US5949181045",
         "USD",

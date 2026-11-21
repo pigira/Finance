@@ -233,7 +233,7 @@
               <tr>
                 <td data-label="Date d'achat" class="col-date">
                   {{ transaction.trade_date | date_fr }}
-                  {% if transaction.broker %}<span class="lot-broker">{{ transaction.broker }}</span>{% endif %}
+                  <span class="lot-envelope">{{ transaction.envelope.name }}</span>
                 </td>
                 <td data-label="Quantité">{{ transaction.quantity | qty }}</td>
                 <td data-label="Prix unitaire">{{ transaction.unit_price | money(asset.currency) }}</td>

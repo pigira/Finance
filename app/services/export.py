@@ -23,7 +23,7 @@ CSV_COLUMNS = [
     "fees",
     "fx_rate",
     "fx_source",
-    "broker",
+    "envelope",
     "created_at",
 ]
 
@@ -32,7 +32,7 @@ def transactions_csv(session: Session) -> str:
     """Machine-readable CSV: comma separated, ISO dates, "." as decimal separator."""
     statement = (
         select(Transaction)
-        .options(joinedload(Transaction.asset))
+        .options(joinedload(Transaction.asset), joinedload(Transaction.envelope))
         .order_by(Transaction.trade_date, Transaction.id)
     )
     buffer = io.StringIO()
@@ -56,7 +56,7 @@ def transactions_csv(session: Session) -> str:
                 repr(transaction.fees),
                 "" if transaction.fx_rate is None else repr(transaction.fx_rate),
                 transaction.fx_source or "",
-                transaction.broker or "",
+                transaction.envelope.name,
                 transaction.created_at.isoformat(timespec="seconds"),
             ]
         )

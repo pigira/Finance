@@ -28,6 +28,9 @@ from app.services import lots, pricing  # noqa: E402
 # The app only answers to its own host names (see app/security.py).
 BASE_URL = "http://127.0.0.1:8000"
 
+# Every new database starts with "Compte par défaut", whose id is therefore 1.
+DEFAULT_ENVELOPE_ID = "1"
+
 MSFT = {
     "isin": "US5949181045",
     "name": "Microsoft Corporation",
@@ -38,6 +41,7 @@ MSFT = {
 }
 MSFT_LOT_A = {
     **MSFT,
+    "envelope_id": DEFAULT_ENVELOPE_ID,
     "trade_date": "15/03/2024",
     "quantity": "10",
     "unit_price": "400,00",
@@ -47,6 +51,7 @@ MSFT_LOT_A = {
 }
 MSFT_LOT_B = {
     **MSFT,
+    "envelope_id": DEFAULT_ENVELOPE_ID,
     "trade_date": "02/06/2025",
     "quantity": "5",
     "unit_price": "450,00",
@@ -55,6 +60,7 @@ MSFT_LOT_B = {
     "fx_source": "ecb",
 }
 EUR_ETF_LOT = {
+    "envelope_id": DEFAULT_ENVELOPE_ID,
     "isin": "IE00B4L5Y983",
     "name": "iShares Core MSCI World UCITS ETF USD (Acc)",
     "asset_type": "etf",
@@ -67,6 +73,7 @@ EUR_ETF_LOT = {
     "fees": "2,00",
 }
 GBX_ETF_LOT = {
+    "envelope_id": DEFAULT_ENVELOPE_ID,
     # The same ETF bought in London, where it is quoted in pence.
     "isin": "IE00B4L5Y983",
     "name": "iShares Core MSCI World UCITS ETF USD (Acc)",
@@ -82,6 +89,7 @@ GBX_ETF_LOT = {
     "fx_source": "manual",
 }
 MANUAL_FUND_LOT = {
+    "envelope_id": DEFAULT_ENVELOPE_ID,
     "isin": "ZZ000PECULE5",
     "name": "Fonds de pension employeur",
     "asset_type": "fund",

@@ -83,7 +83,7 @@ class LotForm(BaseModel):
     fees: DecimalOrZero = 0.0
     fx_rate: OptionalDecimal = None
     fx_source: str | None = None
-    broker: str | None = None
+    envelope_id: int
 
     @field_validator("isin", mode="before")
     @classmethod
@@ -164,10 +164,13 @@ class LotForm(BaseModel):
             raise ValueError(f"Taux de change EUR/{iso_code} requis")
         return value
 
-    @field_validator("broker", mode="before")
+    @field_validator("envelope_id", mode="before")
     @classmethod
-    def _broker(cls, value: Any) -> str | None:
-        return str(value or "").strip()[:100] or None
+    def _envelope_chosen(cls, value: Any) -> int:
+        text = str(value or "").strip()
+        if not text.isdigit():
+            raise ValueError("Compte requis")
+        return int(text)
 
     @model_validator(mode="after")
     def _normalize(self) -> "LotForm":
@@ -183,6 +186,39 @@ class LotForm(BaseModel):
         elif self.fx_source not in PROVIDER_FX_SOURCES:
             self.fx_source = "manual"
         return self
+
+
+OptionalDate = Annotated[date | None, BeforeValidator(lambda v: parse_date(v) if v else None)]
+
+
+class EnvelopeForm(BaseModel):
+    """An envelope ("compte") as submitted from Paramètres > Comptes."""
+
+    name: str
+    envelope_type: Literal["cto", "pea", "pea_pme", "assurance_vie", "per"]
+    broker: str | None = None
+    opening_date: OptionalDate = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _check_name(cls, value: Any) -> str:
+        name = str(value or "").strip()
+        if not name:
+            raise ValueError("Nom requis")
+        return name[:100]
+
+    @field_validator("broker", mode="before")
+    @classmethod
+    def _broker(cls, value: Any) -> str | None:
+        return str(value or "").strip()[:100] or None
+
+    @field_validator("opening_date")
+    @classmethod
+    def _not_in_future(cls, value: date | None, info: ValidationInfo) -> date | None:
+        today = (info.context or {}).get("today") or date.today()
+        if value is not None and value > today:
+            raise ValueError("La date d'ouverture ne peut pas être dans le futur")
+        return value
 
 
 def french_errors(error: ValidationError) -> dict[str, str]:
