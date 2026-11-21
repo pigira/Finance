@@ -6,6 +6,7 @@ Four assets covering every case the app handles: a USD stock with two lots,
 an Amsterdam-listed EUR ETF, the same ETF bought in London where it is quoted
 in pence (GBX), and an unlisted fund whose price is typed by hand. With PRICE_PROVIDER=mock the
 resulting figures are exactly the reference values of the specification.
+They are spread over three envelopes: two CTOs at two brokers and a PER.
 
 The command refuses to run on a database that already contains purchases.
 """
@@ -17,10 +18,10 @@ from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.db import init_db, make_engine, make_session_factory
-from app.models import Transaction
+from app.models import Envelope, Transaction
 from app.providers import build_fx_provider, build_price_provider
-from app.schemas import LotForm
-from app.services import lots, pricing
+from app.schemas import EnvelopeForm, LotForm
+from app.services import envelopes, lots, pricing
 
 DEMO_FUND_ISIN = "ZZ000PECULE5"  # made-up ISIN ("ZZ" is not a country) with a valid check digit
 
@@ -55,6 +56,12 @@ PENSION_FUND = {
     "manual_price": True,
 }
 
+DEMO_ENVELOPES: list[dict[str, object]] = [
+    {"name": "CTO Courtier A", "envelope_type": "cto", "broker": "Courtier A"},
+    {"name": "CTO Courtier B", "envelope_type": "cto", "broker": "Courtier B"},
+    {"name": "PER employeur", "envelope_type": "per", "opening_date": date(2021, 9, 1)},
+]
+
 # Unit prices and fees are in the asset currency (pounds, not pence, for London).
 DEMO_LOTS: list[dict[str, object]] = [
     {
@@ -65,7 +72,7 @@ DEMO_LOTS: list[dict[str, object]] = [
         "fees": 1.00,
         "fx_rate": 1.0900,
         "fx_source": "ecb",
-        "broker": "Courtier A",
+        "envelope": "CTO Courtier A",
     },
     {
         **MICROSOFT,
@@ -75,7 +82,7 @@ DEMO_LOTS: list[dict[str, object]] = [
         "fees": 1.00,
         "fx_rate": 1.1400,
         "fx_source": "ecb",
-        "broker": "Courtier A",
+        "envelope": "CTO Courtier A",
     },
     {
         **MSCI_WORLD,
@@ -83,7 +90,7 @@ DEMO_LOTS: list[dict[str, object]] = [
         "quantity": 10,
         "unit_price": 80.00,
         "fees": 2.00,
-        "broker": "Courtier B",
+        "envelope": "CTO Courtier B",
     },
     {
         **MSCI_WORLD_LONDON,
@@ -93,7 +100,7 @@ DEMO_LOTS: list[dict[str, object]] = [
         "fees": 0.0,
         "fx_rate": 0.8400,
         "fx_source": "manual",
-        "broker": "Courtier B",
+        "envelope": "CTO Courtier B",
     },
     {
         **PENSION_FUND,
@@ -101,6 +108,7 @@ DEMO_LOTS: list[dict[str, object]] = [
         "quantity": 120.5,
         "unit_price": 10.00,
         "fees": 0.0,
+        "envelope": "PER employeur",
     },
 ]
 PENSION_FUND_CURRENT_PRICE = 11.37
@@ -118,7 +126,15 @@ def main() -> int:
             print("Point DATABASE_URL at a new file to create a separate demo database.")
             return 1
 
-        for lot in DEMO_LOTS:
+        envelope_ids: dict[object, int] = {}
+        for values in DEMO_ENVELOPES:
+            envelope: Envelope = envelopes.create_envelope(
+                session, EnvelopeForm.model_validate(values)
+            )
+            envelope_ids[envelope.name] = envelope.id
+
+        for values in DEMO_LOTS:
+            lot = {**values, "envelope_id": envelope_ids[values["envelope"]]}
             transaction = lots.create_lot(session, LotForm.model_validate(lot), settings)
             if transaction.asset.manual_price:
                 pricing.set_manual_price(

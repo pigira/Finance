@@ -703,7 +703,7 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
 .positions .lots th:last-child, .positions .lots td:last-child { padding-right: 10px; }
 .lots .col-pl { vertical-align: top; }
 .lots .actions { margin: -4px 0; }
-.lot-broker { display: block; color: var(--muted); font-size: 0.6875rem; }
+.lot-envelope { display: block; color: var(--muted); font-size: 0.6875rem; }
 
 /* Empty state */
 .empty-state {
@@ -839,3 +839,13 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
   .lots .col-pl, .lots .col-actions { grid-column: 1 / -1; }
   .lots .actions { margin: 0; }
 }
+
+/* ---- Paramètres > Comptes ---- */
+.envelope-list { list-style: none; display: grid; }
+.envelope-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 0; border-top: 1px solid var(--border);
+}
+.envelope-item:first-child { border-top: 0; }
+.envelope-item .badge { margin-left: 6px; }
+.envelope-item .dd-note { display: block; margin-top: 2px; }

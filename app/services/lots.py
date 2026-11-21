@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.models import Asset, Transaction
+from app.models import Asset, Envelope, Transaction
 from app.schemas import LotForm
 from app.services import pricing
 
@@ -31,6 +31,7 @@ def all_assets(session: Session) -> list[Asset]:
 
 def create_lot(session: Session, form: LotForm, settings: Settings) -> Transaction:
     """Add a purchase. The asset is created on first use and reused afterwards."""
+    envelope = _get_envelope(session, form)
     asset = find_asset(session, form.isin, form.exchange)
     if asset is None:
         asset = Asset(
@@ -55,7 +56,7 @@ def create_lot(session: Session, form: LotForm, settings: Settings) -> Transacti
         _apply_asset_fields(session, asset, form, settings)
 
     transaction = Transaction(asset=asset, type="buy")
-    _apply_lot_fields(transaction, form)
+    _apply_lot_fields(transaction, form, envelope)
     session.add(transaction)
     session.commit()
     return transaction
@@ -65,8 +66,9 @@ def update_lot(
     session: Session, transaction: Transaction, form: LotForm, settings: Settings
 ) -> Transaction:
     """Edit a purchase. ISIN, exchange and currency of its asset are not editable."""
+    envelope = _get_envelope(session, form)
     _apply_asset_fields(session, transaction.asset, form, settings)
-    _apply_lot_fields(transaction, form)
+    _apply_lot_fields(transaction, form, envelope)
     session.commit()
     return transaction
 
@@ -78,14 +80,23 @@ def delete_lot(session: Session, transaction: Transaction) -> None:
     session.commit()
 
 
-def _apply_lot_fields(transaction: Transaction, form: LotForm) -> None:
+def _get_envelope(session: Session, form: LotForm) -> Envelope:
+    envelope = session.get(Envelope, form.envelope_id)
+    if envelope is None:
+        raise LotError("envelope_id", "Compte inconnu")
+    if envelope.opening_date is not None and form.trade_date < envelope.opening_date:
+        raise LotError("trade_date", "Date antérieure à l'ouverture du compte")
+    return envelope
+
+
+def _apply_lot_fields(transaction: Transaction, form: LotForm, envelope: Envelope) -> None:
     transaction.trade_date = form.trade_date
     transaction.quantity = form.quantity
     transaction.unit_price = form.unit_price
     transaction.fees = form.fees
     transaction.fx_rate = form.fx_rate
     transaction.fx_source = form.fx_source
-    transaction.broker = form.broker
+    transaction.envelope = envelope
 
 
 def _apply_asset_fields(session: Session, asset: Asset, form: LotForm, settings: Settings) -> None:

@@ -20,6 +20,7 @@ from app.db import Base
 from app.timeutil import utc_now
 
 ASSET_TYPES = ("etf", "stock", "fund")
+ENVELOPE_TYPES = ("cto", "pea", "pea_pme", "assurance_vie", "per")
 
 
 class SchemaVersion(Base):
@@ -29,6 +30,29 @@ class SchemaVersion(Base):
 
     version: Mapped[int] = mapped_column(Integer, primary_key=True)
     applied_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+
+class Envelope(Base):
+    """A named tax wrapper ("compte": PEA, CTO...) opened at one broker. Holds lots."""
+
+    __tablename__ = "envelopes"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_envelopes_name"),
+        CheckConstraint(
+            "envelope_type in ('cto', 'pea', 'pea_pme', 'assurance_vie', 'per')",
+            name="ck_envelopes_type",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    envelope_type: Mapped[str] = mapped_column(String(20))
+    broker: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # NULL: unknown, the date of the envelope's oldest lot stands in for it.
+    opening_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    transactions: Mapped[list["Transaction"]] = relationship(back_populates="envelope")
 
 
 class Asset(Base):
@@ -77,6 +101,7 @@ class Transaction(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"))
+    envelope_id: Mapped[int] = mapped_column(ForeignKey("envelopes.id"))
     type: Mapped[str] = mapped_column(String(4), default="buy")
     trade_date: Mapped[date] = mapped_column(Date)
     quantity: Mapped[float] = mapped_column(Float)
@@ -86,10 +111,10 @@ class Transaction(Base):
     fx_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Where fx_rate came from: provider label ('ecb', ...) or 'manual'.
     fx_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    broker: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     asset: Mapped[Asset] = relationship(back_populates="transactions")
+    envelope: Mapped[Envelope] = relationship(back_populates="transactions")
 
 
 class PriceHistory(Base):

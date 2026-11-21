@@ -179,10 +179,13 @@
       </div>
 
       <div class="field">
-        <label for="broker">Courtier <span class="label-note">facultatif</span></label>
-        <input id="broker" name="broker" type="text" maxlength="100" autocomplete="off"
-               value="{{ values.get('broker', '') }}" {{ describedby("broker") }}>
-        {{ field_error(errors, "broker") }}
+        <label for="envelope_id">Compte</label>
+        <select id="envelope_id" name="envelope_id" {{ describedby("envelope_id") }}>
+          {% for envelope in envelope_choices %}
+          <option value="{{ envelope.id }}" {% if values.get("envelope_id") == envelope.id | string %}selected{% endif %}>{{ envelope.name }}</option>
+          {% endfor %}
+        </select>
+        {{ field_error(errors, "envelope_id") }}
       </div>
     </div>
 

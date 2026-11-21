@@ -3,7 +3,9 @@
 A single-user, local-first portfolio tracker: one page showing what you own,
 what it cost and what it is worth today, in EUR.
 
-- **Purchases** ("lots") are entered by hand: ISIN, date, quantity, unit price, fees.
+- **Purchases** ("lots") are entered by hand: ISIN, date, quantity, unit price, fees,
+  and the **Envelope** they were bought in ("compte" in the interface: PEA, CTO,
+  assurance-vie…). Envelopes are managed in Paramètres.
 - **Dashboard**: KPI cards, allocation donuts (by asset, type, currency) and a
   positions table with one sub-row per purchase.
 - **Foreign currencies**: the P/L of a USD or GBP holding can be split into
@@ -68,7 +70,8 @@ and `$env:PRICE_PROVIDER="mock"` first, then the two commands without the prefix
 
 The demo holds Microsoft (USD, two purchases), an MSCI World ETF bought in
 Amsterdam (EUR), the same ETF bought in London where it is quoted in pence
-(GBX), and an unlisted fund whose price is typed by hand.
+(GBX), and an unlisted fund whose price is typed by hand. They sit in three
+Envelopes: two CTOs at two brokers and a PER.
 
 ## Configuration
 

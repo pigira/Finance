@@ -13,7 +13,7 @@ from app import APP_NAME
 from app.config import Settings, get_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.providers import build_fx_provider, build_price_provider
-from app.routers import fragments, lots, pages
+from app.routers import envelopes, fragments, lots, pages
 from app.security import SameOriginMiddleware
 from app.services import pricing
 from app.web import STATIC_DIR, build_templates
@@ -48,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     app.include_router(pages.router)
     app.include_router(lots.router)
+    app.include_router(envelopes.router)
     app.include_router(fragments.router)
     return app
 

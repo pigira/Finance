@@ -9,7 +9,7 @@ simplest option that seemed reasonable; the "why" is given so it can be revisite
 |---|---|---|
 | 1 | The app is called **Pécule** (French for "nest egg"), with a hand-drawn ring logo. | Original name and mark, no existing brand imitated. |
 | 2 | P/L is shown as "Plus-value latente (hors dividendes)" in the KPI card and above the table. | Required label; the column header stays short. |
-| 3 | A free-text **broker** field exists on a purchase and is shown under the date. No grouping or filtering by broker. | The column is in the data model; aggregation is out of scope. |
+| 3 | ~~A free-text **broker** field exists on a purchase and is shown under the date.~~ Superseded: every purchase belongs to an **Envelope** ("Compte"), whose name is shown under the date; the broker is a property of the Envelope (#2). | FIFO, Sale limits and estimated costs all depend on the Envelope. |
 | 4 | In edit mode, ISIN, exchange and currency are read-only. Name, type, ticker and the manual-price flag are editable and apply to the asset, hence to all its lots. | Changing the identity of an asset under existing lots would silently re-value them. |
 | 5 | Adding a lot to an existing (ISIN, exchange) reuses the asset and updates its name, type, ticker and manual flag from the form. A different currency is refused with a message. | "Last write wins" is predictable; a currency mismatch would corrupt valuations. |
 | 6 | An asset without listing (manual fund) has `exchange = ''`, not NULL. | SQLite treats NULLs as distinct, which would defeat `unique(isin, exchange)`. |
@@ -80,3 +80,7 @@ simplest option that seemed reasonable; the "why" is given so it can be revisite
 | 46 | CDN scripts are pinned to exact versions with Subresource Integrity hashes. | A changed file on the CDN is refused by the browser. |
 | 47 | The property test uses `random` with a fixed seed, not Hypothesis. | No extra dependency; failures are reproducible. |
 | 48 | `python -m app.smoke_live` was added. | A one-command check of the unofficial Yahoo integration. |
+| 49 | Migrations run inside `init_db`, at start-up, in one SQLite transaction opened explicitly (DDL included). Version 2 rebuilds `transactions` to make `envelope_id` NOT NULL, turns each distinct broker into a CTO Envelope and puts lots without broker in "Compte par défaut". | pysqlite does not open a transaction before DDL by itself; without it, a failure halfway would leave a half-migrated file. |
+| 50 | A database always holds at least one Envelope: "Compte par défaut" (CTO) is created when none exists, and the last Envelope cannot be deleted. | The first purchase must be possible without visiting Paramètres. |
+| 51 | An Envelope's opening date is optional. When set, a purchase dated before it is refused, and so is an opening date later than one of its purchases. | Migrated and default envelopes have no known opening date; the oldest purchase stands in for it. |
+| 52 | Envelope names are unique. | The CSV export and the purchase form identify an Envelope by its name. |

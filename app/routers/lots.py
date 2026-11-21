@@ -20,7 +20,7 @@ from app.providers.base import (
     quoted_currency_code,
 )
 from app.schemas import LotForm, french_errors
-from app.services import lots, pricing
+from app.services import envelopes, lots, pricing
 from app.services.portfolio import build_portfolio
 from app.timeutil import local_today
 from app.web import (
@@ -47,6 +47,9 @@ def new_lot_page(
 ) -> HTMLResponse:
     """Empty form. With ?asset_id=..., the asset part is prefilled (add a lot to it)."""
     values = {"trade_date": format_date(local_today(settings.display_timezone)), "currency": EUR}
+    envelope = envelopes.last_used_envelope(session)
+    if envelope is not None:
+        values["envelope_id"] = str(envelope.id)
     asset = session.get(Asset, asset_id) if asset_id is not None else None
     if asset is not None:
         values.update(_asset_values(asset))
@@ -104,6 +107,9 @@ def update_lot(
         lots.update_lot(session, lot, _validate(data, settings), settings)
     except ValidationError as exc:
         return _render_form(request, session, values=data, errors=french_errors(exc), lot=lot)
+    except lots.LotError as exc:
+        session.rollback()
+        return _render_form(request, session, values=data, errors={exc.field: exc.message}, lot=lot)
 
     pricing.refresh_all(session, price_provider, fx_provider, settings)
     return RedirectResponse("/", status_code=303)
@@ -169,7 +175,7 @@ def _lot_values(lot: Transaction) -> dict[str, str]:
         "fees": format_input_number(lot.fees),
         "fx_rate": format_input_number(lot.fx_rate),
         "fx_source": lot.fx_source or "",
-        "broker": lot.broker or "",
+        "envelope_id": str(lot.envelope_id),
     }
 
 
@@ -230,6 +236,7 @@ def _render_form(
         errors=errors or {},
         lot=lot,
         known_assets=known_assets,
+        envelope_choices=envelopes.all_envelopes(session),
         form_state=form_state,
         today_iso=local_today(request.app.state.settings.display_timezone).isoformat(),
         **_fx_field_context(values),

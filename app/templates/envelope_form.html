@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "macros.html" import icon, field_error %}
+{% set page_title = "Modifier un compte" if envelope else "Ajouter un compte" %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block heading %}{{ page_title }}{% endblock %}
+
+{% macro describedby(name, hint=false) -%}
+{% if hint or errors.get(name) %}aria-describedby="{% if hint %}{{ name }}-hint{% endif %}{% if errors.get(name) %} {{ name }}-error{% endif %}"{% endif %}
+{% if errors.get(name) %} aria-invalid="true"{% endif %}
+{%- endmacro %}
+
+{% block content %}
+<form class="lot-form" method="post" action="{{ '/settings/envelopes/%d' | format(envelope.id) if envelope else '/settings/envelopes' }}" novalidate>
+
+  {% if errors %}
+  <p class="flash flash-error" role="alert">{{ icon("alert") }}Le compte n'a pas été enregistré : corrigez les champs signalés ci-dessous.</p>
+  {% endif %}
+
+  <section class="card form-section" aria-labelledby="envelope-section-title">
+    <header class="card-header">
+      <h2 id="envelope-section-title" class="card-title">Compte</h2>
+      <p class="card-note">Une enveloppe fiscale (PEA, CTO, assurance-vie…) ouverte chez un courtier.</p>
+    </header>
+
+    <div class="form-grid">
+      <div class="field field-wide">
+        <label for="name">Nom</label>
+        <input id="name" name="name" type="text" maxlength="100" autocomplete="off"
+               placeholder="ex. PEA Boursorama" value="{{ values.get('name', '') }}" {{ describedby("name") }}>
+        {{ field_error(errors, "name") }}
+      </div>
+
+      <div class="field">
+        <label for="envelope_type">Type</label>
+        <select id="envelope_type" name="envelope_type" {{ describedby("envelope_type") }}>
+          {% for code, label in envelope_types.items() %}
+          <option value="{{ code }}" {% if values.get("envelope_type") == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        {{ field_error(errors, "envelope_type") }}
+      </div>
+
+      <div class="field">
+        <label for="broker">Courtier <span class="label-note">facultatif</span></label>
+        <input id="broker" name="broker" type="text" maxlength="100" autocomplete="off"
+               value="{{ values.get('broker', '') }}" {{ describedby("broker") }}>
+        {{ field_error(errors, "broker") }}
+      </div>
+
+      <div class="field">
+        <label for="opening_date">Date d'ouverture <span class="label-note">facultatif</span></label>
+        <input id="opening_date" name="opening_date" type="text" inputmode="numeric" maxlength="10"
+               autocomplete="off" placeholder="jj/mm/aaaa" value="{{ values.get('opening_date', '') }}"
+               {{ describedby("opening_date", hint=true) }}>
+        {{ field_error(errors, "opening_date") }}
+        <p class="hint" id="opening_date-hint">Si vous la laissez vide, la date de votre plus ancien achat dans ce compte en tient lieu.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button type="submit" class="btn btn-primary">{{ icon("check") }}{{ "Enregistrer les modifications" if envelope else "Enregistrer le compte" }}</button>
+    <a class="btn" href="/settings">Annuler</a>
+  </div>
+</form>
+{% endblock %}
