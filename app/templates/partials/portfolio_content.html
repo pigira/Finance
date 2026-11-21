@@ -12,6 +12,146 @@
         hx-confirm="Supprimer l'achat du {{ lot.trade_date | date_fr }} ({{ lot.quantity | qty }} × {{ asset.name }}) ?">{{ icon("trash") }}</button>
 {%- endmacro %}
 
+{% macro positions_head() -%}
+  <thead>
+    <tr>
+      <th scope="col" class="col-asset"><button type="button" class="sort" data-sort="name">Actif</button></th>
+      <th scope="col"><button type="button" class="sort" data-sort="quantity">Quantité</button></th>
+      <th scope="col"><button type="button" class="sort" data-sort="pru" title="Prix de revient unitaire en euros, frais inclus">PRU</button></th>
+      <th scope="col">Dernier cours</th>
+      <th scope="col" aria-sort="descending"><button type="button" class="sort" data-sort="value">Valeur</button></th>
+      <th scope="col"><button type="button" class="sort" data-sort="pl">Plus-value latente</button></th>
+      <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+    </tr>
+  </thead>
+{%- endmacro %}
+
+{# One <tbody> per row: the row itself plus its lot sub-rows. `row_key` names its
+   expand state and element ids; `group` is the envelope id in the "Par compte" table. #}
+{% macro position_body(position, row_key, show_envelope=true, group=none) -%}
+  {% set asset = position.asset %}
+  {% set result = position.result %}
+  <tbody class="position" {% if group %}data-group="{{ group }}" {% endif %}data-name="{{ asset.name | lower }}" data-quantity="{{ result.quantity }}"
+         data-pru="{{ result.pru_eur }}" data-value="{{ result.value_eur }}"
+         data-pl-eur="{{ result.pl_eur }}" data-pl-pct="{{ result.pl_pct }}">
+    <tr class="position-row">
+      <td class="col-asset">
+        <div class="asset">
+          {% if position.has_several_lots %}
+          <button type="button" class="chevron" x-data
+                  @click="$store.ui.toggleAsset('{{ row_key }}')"
+                  :aria-expanded="$store.ui.isOpen('{{ row_key }}')" aria-expanded="false"
+                  aria-controls="lots-{{ row_key }}"
+                  aria-label="Détail des {{ position.lots | length }} achats de {{ asset.name }}">{{ icon("chevron") }}</button>
+          {% else %}
+          <span class="chevron-spacer" aria-hidden="true"></span>
+          {% endif %}
+          <div class="asset-text">
+            <span class="asset-name">{{ asset.name }}</span>
+            <span class="asset-meta">
+              <span class="asset-codes">{{ asset.isin }}{% if asset.ticker %} · {{ asset.ticker }}{% endif %}</span>
+              <span class="badge" title="Devise de cotation">{{ asset.currency }}</span>
+              {% if show_envelope %}
+              <span class="asset-envelope">{% if position.envelopes | length > 1 %}{{ position.envelopes | length }} comptes{% else %}{{ position.envelopes[0].name }}{% endif %}</span>
+              {% endif %}
+              {% if position.has_several_lots %}
+              <span>{{ position.lots | length }} achats</span>
+              {% else %}
+              <span>Acheté le {{ position.lots[0].transaction.trade_date | date_fr }}</span>
+              {% endif %}
+            </span>
+          </div>
+        </div>
+      </td>
+      <td data-label="Quantité">{{ result.quantity | qty }}</td>
+      <td data-label="PRU">{{ result.pru_eur | money }}</td>
+      <td data-label="Dernier cours" class="col-price" {% if asset.manual_price %}x-data="{ editing: false }"{% endif %}>
+        {% if asset.manual_price %}
+        <div class="price-line" x-show="!editing">
+          <span>{{ position.last_price | money(asset.currency) }}</span>
+          <button type="button" class="icon-btn" title="Modifier le prix actuel"
+                  aria-label="Modifier le prix actuel de {{ asset.name }}"
+                  @click="editing = true; $nextTick(() => $refs.price.select())">{{ icon("pencil") }}</button>
+        </div>
+        <form class="price-form" x-show="editing" x-cloak
+              hx-post="/assets/{{ asset.id }}/price" hx-target="#portfolio-content" hx-swap="outerHTML"
+              @keydown.escape="editing = false">
+          <label class="sr-only" for="price-{{ row_key }}">Prix actuel de {{ asset.name }} en {{ asset.currency }}</label>
+          <input id="price-{{ row_key }}" name="price" x-ref="price" inputmode="decimal" autocomplete="off"
+                 required value="{{ position.last_price | input_number }}">
+          <button type="submit" class="icon-btn" title="Enregistrer" aria-label="Enregistrer le prix">{{ icon("check") }}</button>
+        </form>
+        {% else %}
+        <span>{{ position.last_price | money(asset.currency) }}</span>
+        {% endif %}
+        <span class="price-meta">
+          {% if asset.manual_price %}<span class="badge" title="Prix saisi à la main, pas de cours via API">manuel</span>{% endif %}
+          {% if position.price_updated_at %}
+          <time datetime="{{ position.price_updated_at.isoformat() }}Z" title="Mis à jour le {{ position.price_updated_at | datetime_fr }}">{{ position.price_updated_at | short_datetime }}</time>
+          {% endif %}
+          {% if position.is_stale %}
+          <span class="badge badge-warn has-tip" tabindex="0" data-tip="{{ position.warnings | join(' · ') }}">{{ icon("alert") }}périmé<span class="sr-only"> : {{ position.warnings | join(" ; ") }}</span></span>
+          {% endif %}
+        </span>
+      </td>
+      <td data-label="Valeur">{{ result.value_eur | money }}</td>
+      <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(result, position.is_foreign) }}</td>
+      <td class="col-actions">
+        <div class="actions">
+          <a class="icon-btn" href="/lots/new?asset_id={{ asset.id }}" title="Ajouter un achat de cet actif"
+             aria-label="Ajouter un achat de {{ asset.name }}">{{ icon("plus") }}</a>
+          {% if not position.has_several_lots %}{{ lot_actions(position.lots[0].transaction, asset) }}{% endif %}
+        </div>
+      </td>
+    </tr>
+    {% if position.has_several_lots %}
+    <tr class="lots-row" id="lots-{{ row_key }}" x-data x-show="$store.ui.isOpen('{{ row_key }}')" x-cloak>
+      <td colspan="7">
+        <table class="lots">
+          <caption class="sr-only">Achats de {{ asset.name }}</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="col-date">Date d'achat</th>
+              <th scope="col">Quantité</th>
+              <th scope="col">Prix unitaire</th>
+              <th scope="col" title="Unités de devise pour 1 EUR, au moment de l'achat">Taux à l'achat</th>
+              <th scope="col">Coût (EUR)</th>
+              <th scope="col">Valeur (EUR)</th>
+              <th scope="col">Plus-value latente</th>
+              <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for lot in position.lots %}
+            {% set transaction = lot.transaction %}
+            <tr>
+              <td data-label="Date d'achat" class="col-date">
+                {{ transaction.trade_date | date_fr }}
+                {% if show_envelope %}<span class="lot-envelope">{{ transaction.envelope.name }}</span>{% endif %}
+              </td>
+              <td data-label="Quantité">{{ transaction.quantity | qty }}</td>
+              <td data-label="Prix unitaire">{{ transaction.unit_price | money(asset.currency) }}</td>
+              <td data-label="Taux à l'achat">
+                {% if position.is_foreign and transaction.fx_rate %}
+                <span title="1 EUR = {{ transaction.fx_rate | rate }} {{ asset.currency }}{% if transaction.fx_source == 'manual' %} (taux saisi){% endif %}">{{ transaction.fx_rate | rate }}</span>
+                {% else %}
+                <span aria-hidden="true">—</span><span class="sr-only">sans objet</span>
+                {% endif %}
+              </td>
+              <td data-label="Coût (EUR)">{{ lot.result.cost_eur | money }}</td>
+              <td data-label="Valeur (EUR)">{{ lot.result.value_eur | money }}</td>
+              <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(lot.result, position.is_foreign) }}</td>
+              <td class="col-actions"><div class="actions">{{ lot_actions(transaction, asset) }}</div></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </td>
+    </tr>
+    {% endif %}
+  </tbody>
+{%- endmacro %}
+
 <div id="portfolio-content" class="portfolio" {% if oob %}hx-swap-oob="true"{% endif %}>
 {% if flash_error %}
 <p class="flash flash-error" role="alert">{{ icon("alert") }}{{ flash_error }}</p>
@@ -123,138 +263,43 @@
 <section class="card positions-card" aria-labelledby="positions-title">
   <header class="card-header">
     <h2 id="positions-title" class="card-title">Positions</h2>
+    <div class="segmented" role="group" aria-label="Regrouper les positions" x-data>
+      <button type="button" @click="$store.ui.setPositionsView('asset')"
+              :aria-pressed="$store.ui.positionsView === 'asset'" aria-pressed="true">Par actif</button>
+      <button type="button" @click="$store.ui.setPositionsView('envelope')"
+              :aria-pressed="$store.ui.positionsView === 'envelope'" aria-pressed="false">Par compte</button>
+    </div>
     <p class="card-note">Plus-value latente (hors dividendes)</p>
   </header>
-  <table class="positions" id="positions-table">
-    <thead>
-      <tr>
-        <th scope="col" class="col-asset"><button type="button" class="sort" data-sort="name">Actif</button></th>
-        <th scope="col"><button type="button" class="sort" data-sort="quantity">Quantité</button></th>
-        <th scope="col"><button type="button" class="sort" data-sort="pru" title="Prix de revient unitaire en euros, frais inclus">PRU</button></th>
-        <th scope="col">Dernier cours</th>
-        <th scope="col" aria-sort="descending"><button type="button" class="sort" data-sort="value">Valeur</button></th>
-        <th scope="col"><button type="button" class="sort" data-sort="pl">Plus-value latente</button></th>
-        <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
-      </tr>
-    </thead>
+  <table class="positions view-by-asset" id="positions-table">
+    {{ positions_head() }}
     {% for position in view.positions %}
-    {% set asset = position.asset %}
-    {% set result = position.result %}
-    <tbody class="position" data-name="{{ asset.name | lower }}" data-quantity="{{ result.quantity }}"
-           data-pru="{{ result.pru_eur }}" data-value="{{ result.value_eur }}"
-           data-pl-eur="{{ result.pl_eur }}" data-pl-pct="{{ result.pl_pct }}">
-      <tr class="position-row">
-        <td class="col-asset">
-          <div class="asset">
-            {% if position.has_several_lots %}
-            <button type="button" class="chevron" x-data
-                    @click="$store.ui.toggleAsset({{ asset.id }})"
-                    :aria-expanded="$store.ui.isOpen({{ asset.id }})" aria-expanded="false"
-                    aria-controls="lots-{{ asset.id }}"
-                    aria-label="Détail des {{ position.lots | length }} achats de {{ asset.name }}">{{ icon("chevron") }}</button>
-            {% else %}
-            <span class="chevron-spacer" aria-hidden="true"></span>
-            {% endif %}
-            <div class="asset-text">
-              <span class="asset-name">{{ asset.name }}</span>
-              <span class="asset-meta">
-                <span class="asset-codes">{{ asset.isin }}{% if asset.ticker %} · {{ asset.ticker }}{% endif %}</span>
-                <span class="badge" title="Devise de cotation">{{ asset.currency }}</span>
-                {% if position.has_several_lots %}
-                <span>{{ position.lots | length }} achats</span>
-                {% else %}
-                <span>Acheté le {{ position.lots[0].transaction.trade_date | date_fr }}</span>
-                {% endif %}
-              </span>
-            </div>
-          </div>
-        </td>
-        <td data-label="Quantité">{{ result.quantity | qty }}</td>
-        <td data-label="PRU">{{ result.pru_eur | money }}</td>
-        <td data-label="Dernier cours" class="col-price" {% if asset.manual_price %}x-data="{ editing: false }"{% endif %}>
-          {% if asset.manual_price %}
-          <div class="price-line" x-show="!editing">
-            <span>{{ position.last_price | money(asset.currency) }}</span>
-            <button type="button" class="icon-btn" title="Modifier le prix actuel"
-                    aria-label="Modifier le prix actuel de {{ asset.name }}"
-                    @click="editing = true; $nextTick(() => $refs.price.select())">{{ icon("pencil") }}</button>
-          </div>
-          <form class="price-form" x-show="editing" x-cloak
-                hx-post="/assets/{{ asset.id }}/price" hx-target="#portfolio-content" hx-swap="outerHTML"
-                @keydown.escape="editing = false">
-            <label class="sr-only" for="price-{{ asset.id }}">Prix actuel de {{ asset.name }} en {{ asset.currency }}</label>
-            <input id="price-{{ asset.id }}" name="price" x-ref="price" inputmode="decimal" autocomplete="off"
-                   required value="{{ position.last_price | input_number }}">
-            <button type="submit" class="icon-btn" title="Enregistrer" aria-label="Enregistrer le prix">{{ icon("check") }}</button>
-          </form>
-          {% else %}
-          <span>{{ position.last_price | money(asset.currency) }}</span>
-          {% endif %}
-          <span class="price-meta">
-            {% if asset.manual_price %}<span class="badge" title="Prix saisi à la main, pas de cours via API">manuel</span>{% endif %}
-            {% if position.price_updated_at %}
-            <time datetime="{{ position.price_updated_at.isoformat() }}Z" title="Mis à jour le {{ position.price_updated_at | datetime_fr }}">{{ position.price_updated_at | short_datetime }}</time>
-            {% endif %}
-            {% if position.is_stale %}
-            <span class="badge badge-warn has-tip" tabindex="0" data-tip="{{ position.warnings | join(' · ') }}">{{ icon("alert") }}périmé<span class="sr-only"> : {{ position.warnings | join(" ; ") }}</span></span>
-            {% endif %}
-          </span>
-        </td>
-        <td data-label="Valeur">{{ result.value_eur | money }}</td>
-        <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(result, position.is_foreign) }}</td>
-        <td class="col-actions">
-          <div class="actions">
-            <a class="icon-btn" href="/lots/new?asset_id={{ asset.id }}" title="Ajouter un achat de cet actif"
-               aria-label="Ajouter un achat de {{ asset.name }}">{{ icon("plus") }}</a>
-            {% if not position.has_several_lots %}{{ lot_actions(position.lots[0].transaction, asset) }}{% endif %}
-          </div>
-        </td>
+    {{ position_body(position, position.asset.id) }}
+    {% endfor %}
+  </table>
+  <table class="positions view-by-envelope" id="positions-by-envelope">
+    {{ positions_head() }}
+    {% for group in view.envelope_groups %}
+    {% set envelope = group.envelope %}
+    <tbody class="group-head" data-group="{{ envelope.id }}">
+      <tr>
+        <th scope="rowgroup" colspan="7">
+          <span class="group-name">{{ envelope.name }}</span>
+          <span class="badge">{{ envelope_type_labels[envelope.envelope_type] }}</span>
+        </th>
       </tr>
-      {% if position.has_several_lots %}
-      <tr class="lots-row" id="lots-{{ asset.id }}" x-data x-show="$store.ui.isOpen({{ asset.id }})" x-cloak>
-        <td colspan="7">
-          <table class="lots">
-            <caption class="sr-only">Achats de {{ asset.name }}</caption>
-            <thead>
-              <tr>
-                <th scope="col" class="col-date">Date d'achat</th>
-                <th scope="col">Quantité</th>
-                <th scope="col">Prix unitaire</th>
-                <th scope="col" title="Unités de devise pour 1 EUR, au moment de l'achat">Taux à l'achat</th>
-                <th scope="col">Coût (EUR)</th>
-                <th scope="col">Valeur (EUR)</th>
-                <th scope="col">Plus-value latente</th>
-                <th scope="col" class="col-actions"><span class="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for lot in position.lots %}
-              {% set transaction = lot.transaction %}
-              <tr>
-                <td data-label="Date d'achat" class="col-date">
-                  {{ transaction.trade_date | date_fr }}
-                  <span class="lot-envelope">{{ transaction.envelope.name }}</span>
-                </td>
-                <td data-label="Quantité">{{ transaction.quantity | qty }}</td>
-                <td data-label="Prix unitaire">{{ transaction.unit_price | money(asset.currency) }}</td>
-                <td data-label="Taux à l'achat">
-                  {% if position.is_foreign and transaction.fx_rate %}
-                  <span title="1 EUR = {{ transaction.fx_rate | rate }} {{ asset.currency }}{% if transaction.fx_source == 'manual' %} (taux saisi){% endif %}">{{ transaction.fx_rate | rate }}</span>
-                  {% else %}
-                  <span aria-hidden="true">—</span><span class="sr-only">sans objet</span>
-                  {% endif %}
-                </td>
-                <td data-label="Coût (EUR)">{{ lot.result.cost_eur | money }}</td>
-                <td data-label="Valeur (EUR)">{{ lot.result.value_eur | money }}</td>
-                <td data-label="Plus-value latente" class="col-pl">{{ pl_cell(lot.result, position.is_foreign) }}</td>
-                <td class="col-actions"><div class="actions">{{ lot_actions(transaction, asset) }}</div></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </td>
+    </tbody>
+    {% for position in group.positions %}
+    {{ position_body(position, "e%d-%d" | format(envelope.id, position.asset.id), show_envelope=false, group=envelope.id) }}
+    {% endfor %}
+    <tbody class="group-total" data-group="{{ envelope.id }}">
+      <tr class="subtotal-row">
+        <th scope="row" class="col-asset">Sous-total : {{ envelope.name }}</th>
+        <td class="subtotal-empty" colspan="3"></td>
+        <td data-label="Valeur">{{ group.totals.value_eur | money }}</td>
+        <td data-label="Plus-value latente" class="col-pl">{{ pl(group.totals.pl_eur, group.totals.pl_pct) }}</td>
+        <td class="col-actions"></td>
       </tr>
-      {% endif %}
     </tbody>
     {% endfor %}
   </table>

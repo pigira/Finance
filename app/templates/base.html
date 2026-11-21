@@ -1,6 +1,6 @@
 {% from "macros.html" import icon %}
 <!doctype html>
-<html lang="fr" data-theme="dark" data-pl-mode="eur" data-fx-effect="off">
+<html lang="fr" data-theme="dark" data-pl-mode="eur" data-fx-effect="off" data-positions-view="asset">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,6 +15,7 @@
         root.dataset.theme = localStorage.getItem("pecule.theme") || "dark";
         root.dataset.plMode = localStorage.getItem("pecule.plMode") || "eur";
         root.dataset.fxEffect = localStorage.getItem("pecule.fxEffect") || "off";
+        root.dataset.positionsView = localStorage.getItem("pecule.positionsView") || "asset";
       } catch (error) { /* storage unavailable: keep the defaults */ }
     })();
   </script>

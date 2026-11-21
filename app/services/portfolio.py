@@ -4,6 +4,7 @@ This module only reads the cache tables: it never calls a provider, so
 rendering the page stays fast and cannot fail because of the network.
 """
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 
@@ -13,7 +14,7 @@ from app import calc
 from app.calc import EUR
 from app.config import Settings
 from app.formatting import format_date, format_datetime
-from app.models import Asset, FxRate, PriceHistory, Transaction
+from app.models import Asset, Envelope, FxRate, PriceHistory, Transaction
 from app.services import pricing
 from app.services.fx import rate_reference_time
 from app.timeutil import utc_now
@@ -35,6 +36,9 @@ class LotView:
 
 @dataclass
 class PositionView:
+    """One row of the positions table: an Asset in one Envelope (a Position), or
+    summed over all its Envelopes (a Consolidated position)."""
+
     asset: Asset
     lots: list[LotView]
     result: calc.AssetResult
@@ -56,6 +60,21 @@ class PositionView:
     def has_several_lots(self) -> bool:
         return len(self.lots) > 1
 
+    @property
+    def envelopes(self) -> list[Envelope]:
+        """The Envelopes its lots are in, by name (one for a Position)."""
+        unique = {lot.transaction.envelope.id: lot.transaction.envelope for lot in self.lots}
+        return sorted(unique.values(), key=lambda envelope: envelope.name)
+
+
+@dataclass
+class EnvelopeGroupView:
+    """The Positions held in one Envelope ("Par compte" view), with their subtotals."""
+
+    envelope: Envelope
+    positions: list[PositionView]
+    totals: calc.PortfolioResult
+
 
 @dataclass(frozen=True)
 class AllocationSlice:
@@ -67,7 +86,8 @@ class AllocationSlice:
 
 @dataclass
 class PortfolioView:
-    positions: list[PositionView]
+    positions: list[PositionView]  # Consolidated positions ("Par actif" view)
+    envelope_groups: list[EnvelopeGroupView]
     totals: calc.PortfolioResult
     allocations: dict[str, list[AllocationSlice]]
     last_refresh_at: datetime | None
@@ -94,14 +114,18 @@ def build_portfolio(
     prices = pricing.latest_prices(session)
     rates = pricing.latest_fx_rates(session)
 
-    positions = [
-        _build_position(asset, prices.get(asset.id), rates.get(asset.currency), settings, now)
-        for asset in pricing.held_assets(session)
-    ]
+    assets = pricing.held_assets(session)
+
+    def position_of(asset: Asset, transactions: list[Transaction]) -> PositionView:
+        price_row, fx_row = prices.get(asset.id), rates.get(asset.currency)
+        return _build_position(asset, transactions, price_row, fx_row, settings, now)
+
+    positions = [position_of(asset, asset.transactions) for asset in assets]
     positions.sort(key=lambda position: position.result.value_eur, reverse=True)
 
     return PortfolioView(
         positions=positions,
+        envelope_groups=_build_envelope_groups(assets, position_of),
         totals=calc.compute_portfolio([position.result for position in positions]),
         allocations=_build_allocations(positions),
         last_refresh_at=_last_refresh_at(prices, rates, settings.display_timezone),
@@ -130,6 +154,7 @@ def _last_refresh_at(
 
 def _build_position(
     asset: Asset,
+    transactions: list[Transaction],
     price_row: PriceHistory | None,
     fx_row: FxRate | None,
     settings: Settings,
@@ -151,7 +176,7 @@ def _build_position(
         LotView(
             transaction, calc.compute_lot(_to_calc_lot(asset, transaction, fx_rate_now), market)
         )
-        for transaction in asset.transactions
+        for transaction in transactions
     ]
     return PositionView(
         asset=asset,
@@ -238,6 +263,32 @@ def _current_fx_rate(
     if failure is not None:
         warnings.append(f"Échec de la mise à jour du taux {pair} : {failure.message}")
     return rate
+
+
+# ---- positions by envelope ("Par compte") -------------------------------------
+
+
+def _build_envelope_groups(
+    assets: list[Asset], position_of: Callable[[Asset, list[Transaction]], PositionView]
+) -> list[EnvelopeGroupView]:
+    """One group per Envelope holding something; largest group and largest Position first."""
+    by_envelope: dict[int, tuple[Envelope, list[PositionView]]] = {}
+    for asset in assets:
+        lots_by_envelope: dict[int, list[Transaction]] = {}
+        for transaction in asset.transactions:  # kept in trade-date order
+            lots_by_envelope.setdefault(transaction.envelope_id, []).append(transaction)
+        for transactions in lots_by_envelope.values():
+            envelope = transactions[0].envelope
+            group = by_envelope.setdefault(envelope.id, (envelope, []))
+            group[1].append(position_of(asset, transactions))
+
+    groups = []
+    for envelope, positions in by_envelope.values():
+        positions.sort(key=lambda position: position.result.value_eur, reverse=True)
+        totals = calc.compute_portfolio([position.result for position in positions])
+        groups.append(EnvelopeGroupView(envelope=envelope, positions=positions, totals=totals))
+    groups.sort(key=lambda group: group.totals.value_eur, reverse=True)
+    return groups
 
 
 # ---- allocation (donut data) -----------------------------------------------

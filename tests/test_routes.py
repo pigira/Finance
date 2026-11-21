@@ -28,6 +28,11 @@ def count(session: Session, model: type) -> int:
     return session.scalar(select(func.count()).select_from(model))
 
 
+def by_asset_view(html: str) -> str:
+    """The page up to the "Par compte" table, which repeats every row per envelope."""
+    return html.split('id="positions-by-envelope"')[0]
+
+
 # ---- pages --------------------------------------------------------------------
 
 
@@ -81,8 +86,8 @@ def test_positions_page_rendering(client: TestClient, demo_portfolio: None) -> N
     # Lots: dates dd/mm/yyyy, purchase FX rate, one sub-table for the 2-lot asset only.
     assert "15/03/2024" in html and "02/06/2025" in html
     assert "1,0900" in html and "1,1400" in html
-    assert html.count('class="lots-row"') == 1
-    assert html.count('class="chevron"') == 1
+    assert by_asset_view(html).count('class="lots-row"') == 1
+    assert by_asset_view(html).count('class="chevron"') == 1
     assert 'id="lots-1"' in html
 
     # Toggles.
@@ -156,7 +161,7 @@ def test_second_lot_reuses_the_asset_and_shows_sub_rows(
     assert count(session, Asset) == 1
     assert count(session, Transaction) == 2
 
-    html = client.get("/").text
+    html = by_asset_view(client.get("/").text)
     assert html.count('class="chevron"') == 1
     assert "2 achats" in html
 

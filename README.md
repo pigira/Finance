@@ -7,7 +7,8 @@ what it cost and what it is worth today, in EUR.
   and the **Envelope** they were bought in ("compte" in the interface: PEA, CTO,
   assurance-vie…). Envelopes are managed in Paramètres.
 - **Dashboard**: KPI cards, allocation donuts (by asset, type, currency) and a
-  positions table with one sub-row per purchase.
+  positions table with one sub-row per purchase, grouped by asset or by
+  Envelope (with a subtotal per Envelope).
 - **Foreign currencies**: the P/L of a USD or GBP holding can be split into
   local performance and FX effect.
 - **Prices** come from Yahoo Finance, **FX rates** from the ECB (Frankfurter API).

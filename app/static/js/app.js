@@ -1,6 +1,7 @@
 /* Pécule front-end glue (no build step).
 
-   - Display preferences (theme, "€ / %", "Effet de change") live in an Alpine
+   - Display preferences (theme, "€ / %", "Effet de change", "Par actif / Par
+     compte") live in an Alpine
      store, are mirrored on <html data-...> for the CSS, and are saved in
      localStorage.
    - `allocation` draws the donut with Chart.js.
@@ -76,20 +77,39 @@
     return Number(position.dataset[key]);
   }
 
-  function applySort() {
-    const table = document.getElementById("positions-table");
-    if (!table) return;
-
-    // Each asset is one <tbody class="position"> (main row + its lot rows).
-    const positions = Array.from(table.querySelectorAll("tbody.position"));
+  // Each row is one <tbody class="position"> (main row + its lot rows).
+  function sorted(positions) {
     const sign = sortState.direction === "asc" ? 1 : -1;
-    positions.sort(function (a, b) {
+    return Array.from(positions).sort(function (a, b) {
       const x = sortValue(a, sortState.key);
       const y = sortValue(b, sortState.key);
       return sign * (typeof x === "string" ? x.localeCompare(y, "fr") : x - y);
     });
-    positions.forEach((position) => table.appendChild(position));
+  }
 
+  function applySort() {
+    const byAsset = document.getElementById("positions-table");
+    if (byAsset) {
+      sorted(byAsset.querySelectorAll("tbody.position")).forEach((row) => byAsset.appendChild(row));
+      markSortedColumn(byAsset);
+    }
+
+    // "Par compte": rows are sorted inside their envelope; envelopes keep their order.
+    const byEnvelope = document.getElementById("positions-by-envelope");
+    if (byEnvelope) {
+      byEnvelope.querySelectorAll("tbody.group-head").forEach(function (head) {
+        const group = '[data-group="' + head.dataset.group + '"]';
+        const rows = sorted(byEnvelope.querySelectorAll("tbody.position" + group));
+        const total = byEnvelope.querySelector("tbody.group-total" + group);
+        byEnvelope.appendChild(head);
+        rows.forEach((row) => byEnvelope.appendChild(row));
+        byEnvelope.appendChild(total);
+      });
+      markSortedColumn(byEnvelope);
+    }
+  }
+
+  function markSortedColumn(table) {
     table.querySelectorAll("thead th").forEach(function (header) {
       const button = header.querySelector("[data-sort]");
       if (button && button.dataset.sort === sortState.key) {
@@ -143,6 +163,7 @@
       theme: root.dataset.theme || "dark",
       plMode: root.dataset.plMode || "eur",
       fxEffect: root.dataset.fxEffect === "on",
+      positionsView: root.dataset.positionsView || "asset",
       // asset id -> true when its lot rows are expanded. In memory only:
       // rows are collapsed again after a full page load.
       openAssets: {},
@@ -166,6 +187,12 @@
         this.fxEffect = enabled;
         root.dataset.fxEffect = enabled ? "on" : "off";
         savePreference("fxEffect", enabled ? "on" : "off");
+      },
+
+      setPositionsView(view) {
+        this.positionsView = view;
+        root.dataset.positionsView = view;
+        savePreference("positionsView", view);
       },
 
       isOpen(assetId) {

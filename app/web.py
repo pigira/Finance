@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app import APP_NAME, formatting
 from app.config import Settings
 from app.providers.base import FxProvider, PriceProvider
+from app.services.envelopes import ENVELOPE_TYPE_LABELS
 from app.services.portfolio import last_refresh_at
 from app.timeutil import utc_now
 
@@ -39,6 +40,7 @@ def build_templates(settings: Settings) -> Jinja2Templates:
     templates.env.globals.update(
         app_name=APP_NAME,
         settings=settings,
+        envelope_type_labels=ENVELOPE_TYPE_LABELS,
         # Changes whenever a static file changes, so browsers never serve a stale copy.
         static_version=_static_version(),
     )

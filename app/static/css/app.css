@@ -141,6 +141,10 @@ button, input, select { font: inherit; color: inherit; }
 :root:not([data-theme="light"]) .only-light { display: none; }
 
 /* Display preferences: "€ / %" and "Effet de change" (see app.js). */
+/* "Par actif / Par compte": both tables are rendered, CSS shows the chosen one. */
+:root[data-positions-view="envelope"] .view-by-asset,
+:root:not([data-positions-view="envelope"]) .view-by-envelope { display: none; }
+
 :root[data-pl-mode="pct"] .when-eur,
 :root:not([data-pl-mode="pct"]) .when-pct,
 :root[data-fx-effect="on"] .when-fx-off,
@@ -849,3 +853,13 @@ th[aria-sort="descending"] .sort::after { content: "↓"; opacity: 1; }
 .envelope-item:first-child { border-top: 0; }
 .envelope-item .badge { margin-left: 6px; }
 .envelope-item .dd-note { display: block; margin-top: 2px; }
+
+/* ---- positions "Par compte" ---- */
+.positions .group-head th {
+  padding-top: 18px; text-align: left; font-weight: 650; border-bottom: 1px solid var(--border);
+}
+.positions .group-head .badge { margin-left: 6px; }
+.positions .subtotal-row th, .positions .subtotal-row td { font-weight: 650; border-top: 1px solid var(--border-strong); }
+/* The row header reads like a cell, not like a column header. */
+.positions .subtotal-row th { border-bottom: 0; color: var(--text-2); font-size: 0.8125rem; padding-top: 14px; vertical-align: top; }
+.asset-envelope { color: var(--text-2); }

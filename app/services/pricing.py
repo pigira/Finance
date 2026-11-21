@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.calc import EUR
 from app.config import Settings
-from app.models import Asset, FxRate, PriceHistory
+from app.models import Asset, FxRate, PriceHistory, Transaction
 from app.providers.base import FxProvider, PriceProvider, ProviderError, Quote
 from app.services.fx import (
     fetch_rate_with_lookback,
@@ -69,7 +69,7 @@ def held_assets(session: Session) -> list[Asset]:
     statement = (
         select(Asset)
         .where(Asset.transactions.any())
-        .options(selectinload(Asset.transactions))
+        .options(selectinload(Asset.transactions).selectinload(Transaction.envelope))
         .order_by(Asset.id)
     )
     return list(session.scalars(statement))
