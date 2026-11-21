@@ -21,6 +21,7 @@ from app.providers.base import (
 )
 from app.schemas import LotForm, french_errors
 from app.services import envelopes, lots, pricing
+from app.services.errors import FormError
 from app.services.portfolio import build_portfolio
 from app.timeutil import local_today
 from app.web import (
@@ -80,7 +81,7 @@ def create_lot(
         lots.create_lot(session, _validate(data, settings), settings)
     except ValidationError as exc:
         return _render_form(request, session, values=data, errors=french_errors(exc))
-    except lots.LotError as exc:
+    except FormError as exc:
         session.rollback()
         return _render_form(request, session, values=data, errors={exc.field: exc.message})
 
@@ -107,7 +108,7 @@ def update_lot(
         lots.update_lot(session, lot, _validate(data, settings), settings)
     except ValidationError as exc:
         return _render_form(request, session, values=data, errors=french_errors(exc), lot=lot)
-    except lots.LotError as exc:
+    except FormError as exc:
         session.rollback()
         return _render_form(request, session, values=data, errors={exc.field: exc.message}, lot=lot)
 
@@ -236,7 +237,7 @@ def _render_form(
         errors=errors or {},
         lot=lot,
         known_assets=known_assets,
-        envelope_choices=envelopes.all_envelopes(session),
+        envelopes=envelopes.all_envelopes(session),
         form_state=form_state,
         today_iso=local_today(request.app.state.settings.display_timezone).isoformat(),
         **_fx_field_context(values),

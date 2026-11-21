@@ -194,7 +194,7 @@ app/
   providers/         base.py (interfaces), yahoo.py, frankfurter.py, mock.py
   services/          pricing.py (refresh), fx.py, portfolio.py, lots.py, envelopes.py,
                      export.py
-  routers/           pages.py, lots.py, envelopes.py (Paramètres > Comptes),
+  routers/           pages.py, lots.py, settings.py (Paramètres, Comptes),
                      fragments.py (HTMX)
   templates/, static/
   refresh.py         python -m app.refresh

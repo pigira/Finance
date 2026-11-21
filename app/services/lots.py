@@ -7,15 +7,7 @@ from app.config import Settings
 from app.models import Asset, Envelope, Transaction
 from app.schemas import LotForm
 from app.services import pricing
-
-
-class LotError(Exception):
-    """A business rule refused the form. `field` says where to show `message`."""
-
-    def __init__(self, field: str, message: str) -> None:
-        super().__init__(message)
-        self.field = field
-        self.message = message
+from app.services.errors import FormError
 
 
 def find_asset(session: Session, isin: str, exchange: str) -> Asset | None:
@@ -48,7 +40,7 @@ def create_lot(session: Session, form: LotForm, settings: Settings) -> Transacti
     else:
         if asset.currency != form.currency:
             place = f"sur {asset.exchange}" if asset.exchange else "sans place de cotation"
-            raise LotError(
+            raise FormError(
                 "currency",
                 f"Cet ISIN existe déjà {place} en {asset.currency}. "
                 "Indiquez une autre place de cotation pour créer un actif distinct.",
@@ -84,12 +76,12 @@ def _get_envelope(session: Session, form: LotForm, current: Envelope | None = No
     """The envelope chosen in the form. `current` is the lot's envelope when it is edited."""
     envelope = session.get(Envelope, form.envelope_id)
     if envelope is None:
-        raise LotError("envelope_id", "Compte inconnu")
+        raise FormError("envelope_id", "Compte inconnu")
     if envelope.opening_date is not None and form.trade_date < envelope.opening_date:
         if current is not None and current.id != envelope.id:
             # The lot is being moved: the envelope is what the user changed.
-            raise LotError("envelope_id", "Compte ouvert après la date de cet achat")
-        raise LotError("trade_date", "Date antérieure à l'ouverture du compte")
+            raise FormError("envelope_id", "Compte ouvert après la date de cet achat")
+        raise FormError("trade_date", "Date antérieure à l'ouverture du compte")
     return envelope
 
 

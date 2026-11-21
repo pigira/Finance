@@ -21,6 +21,8 @@ from app.timeutil import utc_now
 
 ASSET_TYPES = ("etf", "stock", "fund")
 ENVELOPE_TYPES = ("cto", "pea", "pea_pme", "assurance_vie", "per")
+# Every database holds at least this envelope until another one exists.
+DEFAULT_ENVELOPE_NAME = "Compte par défaut"
 
 
 class SchemaVersion(Base):
@@ -39,7 +41,7 @@ class Envelope(Base):
     __table_args__ = (
         UniqueConstraint("name", name="uq_envelopes_name"),
         CheckConstraint(
-            "envelope_type in ('cto', 'pea', 'pea_pme', 'assurance_vie', 'per')",
+            f"envelope_type in ({', '.join(repr(code) for code in ENVELOPE_TYPES)})",
             name="ck_envelopes_type",
         ),
     )
