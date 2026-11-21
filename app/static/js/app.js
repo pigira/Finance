@@ -1,9 +1,8 @@
 /* Pécule front-end glue (no build step).
 
-   - Display preferences (theme, "€ / %", "Effet de change", "Par actif / Par
-     compte") live in an Alpine
-     store, are mirrored on <html data-...> for the CSS, and are saved in
-     localStorage.
+   - Display preferences (theme, "€ / %", "Effet de change", "Par actif /
+     Par compte") live in an Alpine store, are mirrored on <html data-...>
+     for the CSS, and are saved in localStorage.
    - `allocation` draws the donut with Chart.js.
    - `lotForm` drives the purchase form.
    - Column sorting and error toasts are plain DOM code.
@@ -164,9 +163,9 @@
       plMode: root.dataset.plMode || "eur",
       fxEffect: root.dataset.fxEffect === "on",
       positionsView: root.dataset.positionsView || "asset",
-      // asset id -> true when its lot rows are expanded. In memory only:
+      // row key -> true when its lot rows are expanded. In memory only:
       // rows are collapsed again after a full page load.
-      openAssets: {},
+      openRows: {},
 
       toggleTheme() {
         this.theme = this.theme === "dark" ? "light" : "dark";
@@ -195,12 +194,12 @@
         savePreference("positionsView", view);
       },
 
-      isOpen(assetId) {
-        return this.openAssets[assetId] === true;
+      isOpen(rowKey) {
+        return this.openRows[rowKey] === true;
       },
 
-      toggleAsset(assetId) {
-        this.openAssets[assetId] = !this.isOpen(assetId);
+      toggleRow(rowKey) {
+        this.openRows[rowKey] = !this.isOpen(rowKey);
       },
     });
 

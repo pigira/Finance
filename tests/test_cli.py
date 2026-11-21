@@ -32,14 +32,15 @@ def test_seed_demo_then_refresh(cli_database: None, capsys: pytest.CaptureFixtur
         assert session.scalar(select(func.count()).select_from(Transaction)) == 5
 
         view = build_portfolio(session, settings)
-        by_type = {position.asset.asset_type for position in view.positions}
+        by_type = {position.asset.asset_type for position in view.consolidated_positions}
         assert by_type == {"stock", "etf", "fund"}
-        currencies = {position.asset.currency for position in view.positions}
+        currencies = {position.asset.currency for position in view.consolidated_positions}
         assert currencies == {"EUR", "USD", "GBP"}
-        assert any(position.asset.manual_price for position in view.positions)
-        msft = next(p for p in view.positions if p.asset.ticker == "MSFT")
+        assert any(position.asset.manual_price for position in view.consolidated_positions)
+        by_ticker = {position.asset.ticker: position for position in view.consolidated_positions}
+        msft = by_ticker["MSFT"]
         assert msft.result.pl_eur == pytest.approx(1172.98, abs=0.01)
-        assert not any(position.is_stale for position in view.positions)
+        assert not any(position.is_stale for position in view.consolidated_positions)
 
     # Running it again must not duplicate anything.
     assert seed_demo.main() == 1

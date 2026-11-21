@@ -38,24 +38,32 @@ def test_positions_are_grouped_by_envelope_with_subtotals(
     assert [group.envelope.name for group in groups] == ["CTO Courtier A", "CTO Courtier B"]
 
     first, second = groups
-    assert [p.asset.ticker for p in first.positions] == ["MSFT", "IWDA.AS"]
+    assert [position.asset.ticker for position in first.positions] == ["MSFT", "IWDA.AS"]
     assert first.positions[0].result.value_eur == pytest.approx(4545.45, abs=0.01)  # lot A only
     assert first.positions[1].result.value_eur == pytest.approx(950.00, abs=0.01)
     assert first.totals.value_eur == pytest.approx(5495.45, abs=0.01)
     assert first.totals.pl_eur == pytest.approx(874.81 + 148.00, abs=0.01)  # MSFT lot A + ETF
 
-    assert [p.asset.ticker for p in second.positions] == ["MSFT"]
+    assert [position.asset.ticker for position in second.positions] == ["MSFT"]
     assert second.totals.value_eur == pytest.approx(2272.73, abs=0.01)  # lot B only
 
-    # The subtotals add up to the portfolio totals.
     assert view.totals.value_eur == pytest.approx(7768.18, abs=0.01)
+
+
+def test_envelope_subtotals_add_up_to_the_portfolio_totals(
+    two_ctos: None, session: Session, settings: Settings
+) -> None:
+    view = build_portfolio(session, settings)
+    for figure in ("value_eur", "cost_eur", "pl_eur"):
+        subtotals = sum(getattr(group.totals, figure) for group in view.envelope_groups)
+        assert subtotals == pytest.approx(getattr(view.totals, figure), abs=0.005), figure
 
 
 def test_a_consolidated_position_sums_its_envelopes_and_names_them(
     two_ctos: None, session: Session, settings: Settings
 ) -> None:
     view = build_portfolio(session, settings)
-    msft, etf = view.positions
+    msft, etf = view.consolidated_positions
 
     assert msft.result.value_eur == pytest.approx(6818.18, abs=0.01)
     assert msft.result.pl_eur == pytest.approx(1172.98, abs=0.01)
@@ -83,3 +91,14 @@ def test_the_dashboard_offers_both_groupings(client: TestClient, two_ctos: None)
     assert f"5{NNBSP}495,45{NBSP}€" in by_envelope
     assert f"+1{NNBSP}022,81{NBSP}€" in by_envelope  # its P/L
     assert f"2{NNBSP}272,73{NBSP}€" in by_envelope
+    # The subtotal also says what was invested: MSFT lot A 3 670,64 € + ETF 802,00 €.
+    assert f"investi 4{NNBSP}472,64{NBSP}€" in by_envelope
+
+
+def test_each_row_of_an_envelope_names_it_for_screen_readers(
+    client: TestClient, two_ctos: None
+) -> None:
+    by_envelope = client.get("/").text.split('id="positions-by-envelope"')[1]
+    # The visible envelope name is the group header; each row repeats it, unseen.
+    assert by_envelope.count('<span class="sr-only">CTO Courtier A : </span>') == 2
+    assert by_envelope.count('<span class="sr-only">CTO Courtier B : </span>') == 1
