@@ -63,6 +63,12 @@ class PositionView:
         return len(self.lots) > 1
 
     @property
+    def envelopes_without_exit_tax(self) -> list[str]:
+        """Names of its Envelopes whose exit tax is not filled in (its exit cost is then
+        a lower bound)."""
+        return [e.name for e in self.envelopes if e.exit_tax_rate_before_pct is None]
+
+    @property
     def envelopes(self) -> list[Envelope]:
         """The Envelopes its lots are in, by name (one for a Position)."""
         unique = {lot.transaction.envelope.id: lot.transaction.envelope for lot in self.lots}
@@ -100,6 +106,14 @@ class PortfolioView:
     @property
     def is_empty(self) -> bool:
         return not self.consolidated_positions
+
+    @property
+    def envelopes_without_exit_tax(self) -> list[str]:
+        return sorted(
+            group.envelope.name
+            for group in self.envelope_groups
+            if group.envelope.exit_tax_rate_before_pct is None
+        )
 
     @property
     def has_foreign(self) -> bool:
@@ -143,7 +157,7 @@ def build_portfolio(
         envelope_groups=groups,
         totals=calc.compute_portfolio([position.result for position in positions]),
         costs=calc.add_up_costs([group.costs for group in groups]),
-        allocations=_build_allocations(positions),
+        allocations=_build_allocations(positions, groups),
         last_refresh_at=_last_refresh_at(prices, rates, settings.display_timezone),
         refresh_is_due=pricing.refresh_is_due(session, settings, now),
     )
@@ -342,13 +356,29 @@ def _attach_costs(
 # ---- allocation (donut data) -----------------------------------------------
 
 
-def _build_allocations(positions: list[PositionView]) -> dict[str, list[AllocationSlice]]:
+def _build_allocations(
+    positions: list[PositionView], groups: list[EnvelopeGroupView]
+) -> dict[str, list[AllocationSlice]]:
     total = sum(position.result.value_eur for position in positions)
     return {
         "asset": _slices_by_asset(positions, total),
         "type": _slices_by_type(positions, total),
         "currency": _slices_by_currency(positions, total),
+        "envelope": _slices_by_envelope(groups, total),
     }
+
+
+def _slices_by_envelope(groups: list[EnvelopeGroupView], total: float) -> list[AllocationSlice]:
+    """Largest Envelope first (groups are sorted by value); the rest folded into "Autres"."""
+    named, others = groups[:MAX_NAMED_SLICES], groups[MAX_NAMED_SLICES:]
+    slices = [
+        _slice(group.envelope.name, group.totals.value_eur, total, slot)
+        for slot, group in enumerate(named, start=1)
+    ]
+    if others:
+        others_value = sum(group.totals.value_eur for group in others)
+        slices.append(_slice(f"Autres ({len(others)})", others_value, total, OTHER_SLICE_COLOR))
+    return slices
 
 
 def _slices_by_asset(positions: list[PositionView], total: float) -> list[AllocationSlice]:

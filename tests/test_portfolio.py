@@ -1,6 +1,7 @@
 """The portfolio view: Consolidated positions, and Positions grouped by Envelope."""
 
 from datetime import date, datetime
+from html import unescape
 
 import pytest
 from fastapi import FastAPI
@@ -109,13 +110,15 @@ def test_estimated_costs_of_positions_envelopes_and_portfolio(
     assert cto_b.costs.annual_cost_eur == 0
     assert cto_b.costs.exit_tax_eur is None
 
-    # A Consolidated position, and the portfolio, add up their parts; one unknown tax
-    # makes the total exit cost unknown too.
+    # A Consolidated position, and the portfolio, add up their parts; with CTO Courtier B's
+    # tax unknown, their exit cost is the known part, a lower bound.
     msft = view.consolidated_positions[0]
     assert msft.costs.annual_cost_eur == pytest.approx(3.00, abs=0.01)
-    assert msft.costs.exit_cost_eur is None
+    assert msft.costs.exit_cost_eur == pytest.approx(22.73 + 267.55, abs=0.01)
+    assert not msft.costs.exit_tax_complete
     assert view.costs.annual_cost_eur == pytest.approx(7.90, abs=0.01)
-    assert view.costs.exit_cost_eur is None
+    assert view.costs.exit_cost_eur == pytest.approx(340.01, abs=0.01)
+    assert not view.costs.exit_tax_complete
 
 
 def test_the_oldest_purchase_dates_an_envelope_without_opening_date(
@@ -140,6 +143,23 @@ def test_the_oldest_purchase_dates_an_envelope_without_opening_date(
     session.commit()
     (group,) = build_portfolio(session, settings, now=today).envelope_groups
     assert group.costs.exit_tax_eur == pytest.approx(46.47, abs=0.01)
+
+
+def test_allocation_by_envelope_and_envelopes_without_exit_tax(
+    cto_a_with_costs: None, session: Session, settings: Settings
+) -> None:
+    view = build_portfolio(session, settings)
+
+    by_envelope = [
+        (s.label, round(s.value_eur, 2), s.color_slot) for s in view.allocations["envelope"]
+    ]
+    assert by_envelope == [("CTO Courtier A", 5495.45, 1), ("CTO Courtier B", 2272.73, 2)]
+
+    # Named where a total is only a lower bound because of them.
+    assert view.envelopes_without_exit_tax == ["CTO Courtier B"]
+    msft, etf = view.consolidated_positions
+    assert msft.envelopes_without_exit_tax == ["CTO Courtier B"]
+    assert etf.envelopes_without_exit_tax == []
 
 
 # ---- the dashboard ----------------------------------------------------------------
@@ -173,3 +193,41 @@ def test_each_row_of_an_envelope_names_it_for_screen_readers(
     # The visible envelope name is the group header; each row repeats it, unseen.
     assert by_envelope.count('<span class="sr-only">CTO Courtier A : </span>') == 2
     assert by_envelope.count('<span class="sr-only">CTO Courtier B : </span>') == 1
+
+
+def test_the_allocation_card_has_a_tab_per_envelope(client: TestClient, two_ctos: None) -> None:
+    html = client.get("/").text
+    assert "show('envelope')" in html
+    assert ">Par compte</button>" in html.split('id="allocation-title"')[1].split("</header>")[0]
+    assert "x-show=\"tab === 'envelope'\"" in html
+
+
+def test_positions_show_their_annual_and_exit_costs(
+    client: TestClient, cto_a_with_costs: None
+) -> None:
+    html = unescape(client.get("/").text)
+    by_asset, by_envelope = html.split('id="positions-by-envelope"')
+    for table in (by_asset, by_envelope):
+        assert 'data-sort="annualCost"' in table and 'data-sort="exitCost"' in table
+
+    # "Par compte": MSFT in CTO Courtier A, its exit cost fully known, and its breakdown.
+    assert f"290,28{NBSP}€" in by_envelope  # 22.73 order fee + 267.55 tax
+    assert f"Courtage à la vente : 22,73{NBSP}€" in by_envelope
+    assert f"Impôt latent : 267,55{NBSP}€" in by_envelope
+    assert f"Frais du compte : 4,90{NBSP}€" not in by_envelope  # the ETF's 4.90 is split:
+    assert f"Frais du compte : 3,00{NBSP}€ · Frais courants : 1,90{NBSP}€" in by_envelope
+    # MSFT in CTO Courtier B: its tax is unknown.
+    assert "Fiscalité non renseignée pour ce compte" in by_envelope
+
+    # "Par actif": MSFT spans both, so its exit cost is a lower bound that says why.
+    assert f"≥{NBSP}290,28{NBSP}€" in by_asset
+    assert "hors fiscalité de : CTO Courtier B" in by_asset
+
+
+def test_a_kpi_card_sums_up_the_estimated_costs(client: TestClient, cto_a_with_costs: None) -> None:
+    kpis = unescape(client.get("/").text).split('class="kpis"')[1].split("</section>")[0]
+    assert "Coûts estimés" in kpis
+    assert f"7,90{NBSP}€ / an" in kpis
+    # CTO Courtier B's tax is unknown: the exit cost is a lower bound, and says why.
+    assert f"sortie ≥{NBSP}340,01{NBSP}€" in kpis
+    assert "hors fiscalité de : CTO Courtier B" in kpis

@@ -10,6 +10,9 @@ what it cost and what it is worth today, in EUR.
 - **Dashboard**: KPI cards, allocation donuts (by asset, type, currency) and a
   positions table with one sub-row per purchase, grouped by asset or by
   Envelope (with a subtotal per Envelope).
+- **Estimated costs**: what each line costs per year (Envelope fees and the
+  asset's ongoing charges) and what selling it today would cost (order fee and
+  tax on the gain), shown beside the P/L, never subtracted from it.
 - **Foreign currencies**: the P/L of a USD or GBP holding can be split into
   local performance and FX effect.
 - **Prices** come from Yahoo Finance, **FX rates** from the ECB (Frankfurter API).
@@ -138,7 +141,8 @@ python -c "import sqlite3; src = sqlite3.connect('data/portfolio.db'); dst = sql
 To restore, stop the app and copy the backup over `data/portfolio.db`.
 
 As a second, human-readable safety net, **Paramètres > Exporter CSV** downloads
-every purchase (also available at `/export/transactions.csv`). The CSV holds
+every purchase (also available at `/export/transactions.csv`), and **Exporter les
+comptes** every Envelope with its fees and exit tax (`/export/envelopes.csv`). The CSV holds
 what you typed; prices and rates are a cache and can always be fetched again.
 
 ## Tests and lint
