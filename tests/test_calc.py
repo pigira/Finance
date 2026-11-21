@@ -174,8 +174,8 @@ OPENED = date(2020, 1, 15)
 
 
 def test_annual_cost_adds_every_fee_shape() -> None:
-    gaining = calc.Holding(value_eur=6000.0, cost_eur=5000.0, ongoing_charges_pct=0.20)
-    losing = calc.Holding(value_eur=4000.0, cost_eur=4500.0)
+    gaining = calc.Position(value_eur=6000.0, cost_eur=5000.0, ongoing_charges_pct=0.20)
+    losing = calc.Position(value_eur=4000.0, cost_eur=4500.0)
     fees = calc.EnvelopeCosts(
         management_fee_pct=0.5,
         custody_fee_pct=0.1,
@@ -191,8 +191,8 @@ def test_annual_cost_adds_every_fee_shape() -> None:
 
 
 def test_selling_order_fee_has_a_minimum() -> None:
-    large = calc.Holding(value_eur=6000.0, cost_eur=5000.0)
-    small = calc.Holding(value_eur=400.0, cost_eur=380.0)
+    large = calc.Position(value_eur=6000.0, cost_eur=5000.0)
+    small = calc.Position(value_eur=400.0, cost_eur=380.0)
     fees = calc.EnvelopeCosts(order_fee_pct=0.5, order_fee_min_eur=5.0)
     first, second = calc.estimate_costs([large, small], fees, OPENED, TODAY)
 
@@ -202,14 +202,14 @@ def test_selling_order_fee_has_a_minimum() -> None:
 
 def test_no_order_fee_when_the_envelope_has_none() -> None:
     (only,) = calc.estimate_costs(
-        [calc.Holding(value_eur=6000.0, cost_eur=5000.0)], calc.EnvelopeCosts(), OPENED, TODAY
+        [calc.Position(value_eur=6000.0, cost_eur=5000.0)], calc.EnvelopeCosts(), OPENED, TODAY
     )
     assert only.order_fee_eur == 0
 
 
 def test_exit_tax_is_on_the_net_gain_and_carried_by_the_gains() -> None:
-    gaining = calc.Holding(value_eur=6000.0, cost_eur=5000.0)
-    losing = calc.Holding(value_eur=4000.0, cost_eur=4400.0)
+    gaining = calc.Position(value_eur=6000.0, cost_eur=5000.0)
+    losing = calc.Position(value_eur=4000.0, cost_eur=4400.0)
     cto = calc.EnvelopeCosts(order_fee_pct=1.0, exit_tax=calc.ExitTax(rate_before_pct=31.4))
     first, second = calc.estimate_costs([gaining, losing], cto, OPENED, TODAY)
 
@@ -222,7 +222,7 @@ def test_exit_tax_is_on_the_net_gain_and_carried_by_the_gains() -> None:
 
 
 def test_exit_tax_rate_changes_on_the_anniversary_of_the_threshold() -> None:
-    gain_of_2000 = [calc.Holding(value_eur=10000.0, cost_eur=8000.0)]
+    gain_of_2000 = [calc.Position(value_eur=10000.0, cost_eur=8000.0)]
     pea = calc.EnvelopeCosts(
         exit_tax=calc.ExitTax(rate_before_pct=31.4, threshold_years=5, rate_after_pct=18.6)
     )
@@ -235,7 +235,7 @@ def test_exit_tax_rate_changes_on_the_anniversary_of_the_threshold() -> None:
 
 
 def test_an_envelope_opened_on_29_february_reaches_its_threshold_on_28_february() -> None:
-    gain_of_2000 = [calc.Holding(value_eur=10000.0, cost_eur=8000.0)]
+    gain_of_2000 = [calc.Position(value_eur=10000.0, cost_eur=8000.0)]
     pea = calc.EnvelopeCosts(
         exit_tax=calc.ExitTax(rate_before_pct=31.4, threshold_years=5, rate_after_pct=18.6)
     )
@@ -244,14 +244,14 @@ def test_an_envelope_opened_on_29_february_reaches_its_threshold_on_28_february(
 
 
 def test_exit_tax_is_split_in_proportion_to_the_gains() -> None:
-    holdings = [
-        calc.Holding(value_eur=1300.0, cost_eur=1000.0),  # +300
-        calc.Holding(value_eur=600.0, cost_eur=500.0),  # +100
-        calc.Holding(value_eur=400.0, cost_eur=500.0),  # -100
+    positions = [
+        calc.Position(value_eur=1300.0, cost_eur=1000.0),  # +300
+        calc.Position(value_eur=600.0, cost_eur=500.0),  # +100
+        calc.Position(value_eur=400.0, cost_eur=500.0),  # -100
     ]
     cto = calc.EnvelopeCosts(exit_tax=calc.ExitTax(rate_before_pct=31.4))
     shares = [
-        estimate.exit_tax_eur for estimate in calc.estimate_costs(holdings, cto, OPENED, TODAY)
+        estimate.exit_tax_eur for estimate in calc.estimate_costs(positions, cto, OPENED, TODAY)
     ]
 
     # Net gain 300, taxed 94.20: three quarters on the +300, one quarter on the +100.
@@ -259,18 +259,18 @@ def test_exit_tax_is_split_in_proportion_to_the_gains() -> None:
 
 
 def test_no_exit_tax_when_the_envelope_is_at_a_net_loss() -> None:
-    holdings = [
-        calc.Holding(value_eur=1100.0, cost_eur=1000.0),  # +100
-        calc.Holding(value_eur=300.0, cost_eur=500.0),  # -200
+    positions = [
+        calc.Position(value_eur=1100.0, cost_eur=1000.0),  # +100
+        calc.Position(value_eur=300.0, cost_eur=500.0),  # -200
     ]
     cto = calc.EnvelopeCosts(exit_tax=calc.ExitTax(rate_before_pct=31.4))
-    estimates = calc.estimate_costs(holdings, cto, OPENED, TODAY)
+    estimates = calc.estimate_costs(positions, cto, OPENED, TODAY)
     assert [estimate.exit_tax_eur for estimate in estimates] == [0, 0]
 
 
 def test_exit_tax_and_exit_cost_are_unknown_without_tax_rates() -> None:
     (only,) = calc.estimate_costs(
-        [calc.Holding(value_eur=6000.0, cost_eur=5000.0)],
+        [calc.Position(value_eur=6000.0, cost_eur=5000.0)],
         calc.EnvelopeCosts(order_fee_min_eur=5.0),
         OPENED,
         TODAY,

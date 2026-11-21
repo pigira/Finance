@@ -46,7 +46,7 @@ def create_lot(session: Session, form: LotForm, settings: Settings) -> Transacti
                 f"Cet ISIN existe déjà {place} en {asset.currency}. "
                 "Indiquez une autre place de cotation pour créer un actif distinct.",
             )
-        _apply_asset_fields(session, asset, form, settings)
+        _apply_asset_fields(session, asset, form, settings, keep_ongoing_charges=True)
 
     transaction = Transaction(asset=asset, type="buy")
     _apply_lot_fields(transaction, form, envelope)
@@ -96,12 +96,23 @@ def _apply_lot_fields(transaction: Transaction, form: LotForm, envelope: Envelop
     transaction.envelope = envelope
 
 
-def _apply_asset_fields(session: Session, asset: Asset, form: LotForm, settings: Settings) -> None:
-    """Update the editable attributes of an existing asset (shared by all its lots)."""
+def _apply_asset_fields(
+    session: Session,
+    asset: Asset,
+    form: LotForm,
+    settings: Settings,
+    keep_ongoing_charges: bool = False,
+) -> None:
+    """Update the editable attributes of an existing asset (shared by all its lots).
+
+    `keep_ongoing_charges`: a new purchase typed without picking the known asset
+    sends that optional field empty; it must not erase the value already stored.
+    """
     asset.name = form.name
     asset.asset_type = form.asset_type
     asset.ticker = form.ticker or None
-    asset.ongoing_charges_pct = form.ongoing_charges_pct
+    if form.ongoing_charges_pct is not None or not keep_ongoing_charges:
+        asset.ongoing_charges_pct = form.ongoing_charges_pct
 
     becomes_manual = form.manual_price and not asset.manual_price
     asset.manual_price = form.manual_price

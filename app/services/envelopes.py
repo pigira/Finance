@@ -31,26 +31,13 @@ COST_FIELDS = (
 # 8 years for an assurance-vie (7.5 % after). A PER is taxed at the income tax rate:
 # no default.
 DEFAULTS_AS_OF = date(2026, 11, 21)
-TYPE_DEFAULTS: dict[str, dict[str, float]] = {
-    "cto": {"exit_tax_rate_before_pct": 31.4},
-    "pea": {
-        "exit_tax_rate_before_pct": 31.4,
-        "exit_tax_threshold_years": 5,
-        "exit_tax_rate_after_pct": 18.6,
-    },
-    "pea_pme": {
-        "exit_tax_rate_before_pct": 31.4,
-        "exit_tax_threshold_years": 5,
-        "exit_tax_rate_after_pct": 18.6,
-    },
-    "assurance_vie": {
-        "exit_tax_rate_before_pct": 30.0,
-        "exit_tax_threshold_years": 8,
-        "exit_tax_rate_after_pct": 24.7,
-    },
-    "per": {},
+DEFAULT_EXIT_TAX: dict[str, calc.ExitTax | None] = {
+    "cto": calc.ExitTax(rate_before_pct=31.4),
+    "pea": calc.ExitTax(rate_before_pct=31.4, threshold_years=5, rate_after_pct=18.6),
+    "pea_pme": calc.ExitTax(rate_before_pct=31.4, threshold_years=5, rate_after_pct=18.6),
+    "assurance_vie": calc.ExitTax(rate_before_pct=30.0, threshold_years=8, rate_after_pct=24.7),
+    "per": None,
 }
-TAX_FIELDS = ("exit_tax_rate_before_pct", "exit_tax_threshold_years", "exit_tax_rate_after_pct")
 
 # French labels of models.ENVELOPE_TYPES, in the order the form offers them.
 ENVELOPE_TYPE_LABELS = {
@@ -128,14 +115,6 @@ def update_envelope(session: Session, envelope: Envelope, form: EnvelopeForm) ->
     return envelope
 
 
-def reapply_defaults(session: Session, envelope: Envelope) -> None:
-    """Put back the exit tax its type suggests. Fees have no default: they stay."""
-    defaults = TYPE_DEFAULTS[envelope.envelope_type]
-    for name in TAX_FIELDS:
-        setattr(envelope, name, defaults.get(name))
-    session.commit()
-
-
 def delete_envelope(session: Session, envelope: Envelope) -> None:
     """Only an empty envelope can go, and never the last one."""
     if envelope.transactions:
@@ -163,5 +142,3 @@ def _apply_fields(envelope: Envelope, form: EnvelopeForm) -> None:
     envelope.opening_date = form.opening_date
     for name in COST_FIELDS:
         setattr(envelope, name, getattr(form, name))
-    if form.exit_tax_threshold_years is not None:
-        envelope.exit_tax_threshold_years = int(form.exit_tax_threshold_years)

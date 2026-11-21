@@ -208,15 +208,19 @@ def test_defaults_are_reapplied_only_on_request(client: TestClient) -> None:
     client.post("/settings/envelopes/2", data={**own_rate, "envelope_type": "assurance_vie"})
     form = client.get("/settings/envelopes/2/edit").text
     assert field_values(form, *TAX_FIELDS) == ["20", "5", "18,6"]
-    assert 'action="/settings/envelopes/2/defaults"' in form
+    assert 'formaction="/settings/envelopes/2/defaults"' in form
 
-    # The button puts back the exit tax of its type; the fees typed in stay.
-    response = client.post("/settings/envelopes/2/defaults", follow_redirects=False)
-    assert response.status_code == 303
-    assert response.headers["location"] == "/settings/envelopes/2/edit"
-    form = client.get("/settings/envelopes/2/edit").text
-    assert field_values(form, *TAX_FIELDS) == ["30", "8", "24,7"]
-    assert field_values(form, "custody_fee_pct", "order_fee_min_eur") == ["0,1", "1,99"]
+    # The button fills in the exit tax of the type picked in the form (here switched
+    # back to PEA without saving), keeps every other field as typed, and saves nothing.
+    picked_pea = {**own_rate, "envelope_type": "pea", "broker": "Bourso"}
+    response = client.post("/settings/envelopes/2/defaults", data=picked_pea)
+    assert response.status_code == 200
+    assert field_values(response.text, *TAX_FIELDS) == ["31,4", "5", "18,6"]
+    assert field_values(response.text, "custody_fee_pct") == ["0,1"]
+    assert 'value="Bourso"' in response.text  # the broker, as typed
+    assert '<option value="pea" selected>' in response.text
+    saved = client.get("/settings/envelopes/2/edit").text
+    assert field_values(saved, *TAX_FIELDS) == ["20", "5", "18,6"]
 
 
 def test_settings_show_the_opening_date_that_counts(client: TestClient) -> None:
@@ -228,6 +232,20 @@ def test_settings_show_the_opening_date_that_counts(client: TestClient) -> None:
     assert "ouvert le 12/09/2023 (date du premier achat)" in html
     assert "ouvert le 04/02/2019" in html
     assert "date d'ouverture inconnue" not in html
+
+
+def test_numbers_must_be_finite(client: TestClient) -> None:
+    response = client.post(
+        "/settings/envelopes",
+        data={**PEA, **PEA_COSTS, "exit_tax_threshold_years": "inf", "order_fee_min_eur": "nan"},
+    )
+    assert response.status_code == 422
+    assert response.text.count("Nombre invalide") == 2
+
+
+def test_the_exit_tax_section_explains_the_per(client: TestClient) -> None:
+    html = unescape(client.get("/settings/envelopes/new?envelope_type=per").text)
+    assert "PER : pas de valeur par défaut" in html
 
 
 # ---- the purchase form ------------------------------------------------------------
@@ -317,6 +335,21 @@ def test_ongoing_charges_belong_to_the_asset(client: TestClient, session: Sessio
     too_much = client.post("/lots", data={**EUR_ETF_LOT, "ongoing_charges_pct": "150"})
     assert too_much.status_code == 422
     assert "Entre 0 et 100 %" in too_much.text
+
+
+def test_a_new_purchase_left_empty_keeps_the_ongoing_charges(
+    client: TestClient, session: Session
+) -> None:
+    client.post("/lots", data={**EUR_ETF_LOT, "ongoing_charges_pct": "0,20"})
+    # Same ISIN typed again, the field left empty: the asset keeps its 0.20 %.
+    client.post("/lots", data={**EUR_ETF_LOT, "trade_date": "05/01/2024"})
+    session.expire_all()
+    assert session.get(Asset, 1).ongoing_charges_pct == 0.20
+
+    # Editing a purchase shows the value; emptying it there clears it on purpose.
+    client.post("/lots/1", data={**EUR_ETF_LOT, "ongoing_charges_pct": ""})
+    session.expire_all()
+    assert session.get(Asset, 1).ongoing_charges_pct is None
 
 
 # ---- CSV export -------------------------------------------------------------------

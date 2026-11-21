@@ -213,12 +213,12 @@ def compute_portfolio(assets: Sequence[AssetResult]) -> PortfolioResult:
 
 
 @dataclass(frozen=True)
-class Holding:
-    """What the cost estimates need to know about one Position."""
+class Position:
+    """What the cost estimates need to know about one Position (an Asset in this Envelope)."""
 
     value_eur: float
     cost_eur: float
-    ongoing_charges_pct: float = 0.0  # the Asset's own yearly fee (TER)
+    ongoing_charges_pct: float = 0.0  # the Asset's own Ongoing charges
 
 
 @dataclass(frozen=True)
@@ -273,23 +273,23 @@ class CostEstimate:
 
 
 def estimate_costs(
-    holdings: Sequence[Holding], costs: EnvelopeCosts, opened_on: date, today: date
+    positions: Sequence[Position], costs: EnvelopeCosts, opened_on: date, today: date
 ) -> list[CostEstimate]:
     """Estimated costs of each Position of one Envelope, in the order given."""
-    envelope_value = sum(holding.value_eur for holding in holdings)
+    envelope_value = sum(position.value_eur for position in positions)
     annual_costs = [
-        (costs.management_fee_pct + costs.custody_fee_pct + holding.ongoing_charges_pct)
+        (costs.management_fee_pct + costs.custody_fee_pct + position.ongoing_charges_pct)
         / 100
-        * holding.value_eur
+        * position.value_eur
         + costs.custody_fee_per_position_eur
-        + costs.account_fee_eur * safe_ratio(holding.value_eur, envelope_value)
-        for holding in holdings
+        + costs.account_fee_eur * safe_ratio(position.value_eur, envelope_value)
+        for position in positions
     ]
     order_fees = [
-        max(costs.order_fee_pct / 100 * holding.value_eur, costs.order_fee_min_eur)
-        for holding in holdings
+        max(costs.order_fee_pct / 100 * position.value_eur, costs.order_fee_min_eur)
+        for position in positions
     ]
-    exit_taxes = _exit_tax_shares(holdings, order_fees, costs.exit_tax, opened_on, today)
+    exit_taxes = _exit_tax_shares(positions, order_fees, costs.exit_tax, opened_on, today)
     return [
         CostEstimate(annual_cost_eur=annual, order_fee_eur=fee, exit_tax_eur=tax)
         for annual, fee, tax in zip(annual_costs, order_fees, exit_taxes, strict=True)
@@ -297,7 +297,7 @@ def estimate_costs(
 
 
 def _exit_tax_shares(
-    holdings: Sequence[Holding],
+    positions: Sequence[Position],
     order_fees: Sequence[float],
     exit_tax: ExitTax | None,
     opened_on: date,
@@ -305,10 +305,10 @@ def _exit_tax_shares(
 ) -> list[float | None]:
     """The tax on the Envelope's net gain, split over the Positions with a gain."""
     if exit_tax is None:
-        return [None] * len(holdings)
+        return [None] * len(positions)
     gains = [
-        holding.value_eur - holding.cost_eur - fee
-        for holding, fee in zip(holdings, order_fees, strict=True)
+        position.value_eur - position.cost_eur - fee
+        for position, fee in zip(positions, order_fees, strict=True)
     ]
     total_tax = exit_tax.rate_pct(opened_on, today) / 100 * max(0.0, sum(gains))
     positive_gains = sum(gain for gain in gains if gain > 0)

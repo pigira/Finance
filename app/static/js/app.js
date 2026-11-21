@@ -4,7 +4,7 @@
      Par compte") live in an Alpine store, are mirrored on <html data-...>
      for the CSS, and are saved in localStorage.
    - `allocation` draws the donut with Chart.js.
-   - `lotForm` drives the purchase form.
+   - `lotForm` drives the purchase form, `envelopeForm` the new-envelope form.
    - Column sorting and error toasts are plain DOM code.
 
    This file must load before Alpine: it registers everything on "alpine:init". */
@@ -297,6 +297,19 @@
 
     // Quoted units that are a hundredth of a currency -> that currency.
     const MINOR_UNITS = { GBX: "GBP", GBp: "GBP", ZAc: "ZAR", ILA: "ILS" };
+
+    // A new envelope: picking a type fills in the exit tax it suggests.
+    // `defaults` maps each type to its form values (see routers/settings.py).
+    Alpine.data("envelopeForm", function (defaults) {
+      return {
+        applyDefaults(envelopeType) {
+          Object.entries(defaults[envelopeType]).forEach(function ([name, value]) {
+            const field = document.getElementById(name);
+            if (field && name !== "envelope_type") field.value = value;
+          });
+        },
+      };
+    });
 
     Alpine.data("lotForm", function (initial) {
       return {
