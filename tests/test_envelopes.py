@@ -396,3 +396,21 @@ def test_transactions_export_gives_the_ongoing_charges_of_the_asset(client: Test
     header, row = client.get("/export/transactions.csv").text.strip().split("\n")
     columns = header.split(",")
     assert row.split(",")[columns.index("ongoing_charges_pct")] == "0.2"
+
+
+def test_suggested_fees_stay_suggested_after_a_validation_error(client: TestClient) -> None:
+    form = client.get("/lots/new").text
+    assert '"envelopeFees": {"1": {"entryPct": 0, "orderMinEur": 0, "orderPct": 0}}' in form
+    assert '"feesTyped": false' in form
+
+    invalid = {**EUR_ETF_LOT, "quantity": "0", "fees": "5", "fees_suggested": "1"}
+    assert '"feesTyped": false' in client.post("/lots", data=invalid).text
+    typed = {**EUR_ETF_LOT, "quantity": "0", "fees": "5"}
+    assert '"feesTyped": true' in client.post("/lots", data=typed).text
+
+
+def test_ongoing_charges_come_last_in_the_transactions_export(client: TestClient) -> None:
+    client.post("/lots", data=EUR_ETF_LOT)
+    header = client.get("/export/transactions.csv").text.split("\n")[0]
+    # Added at the end, so the columns of older exports keep their place.
+    assert header.endswith(",created_at,ongoing_charges_pct")

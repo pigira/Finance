@@ -10,7 +10,7 @@ what it cost and what it is worth today, in EUR.
 - **Dashboard**: KPI cards, allocation donuts (by asset, type, currency) and a
   positions table with one sub-row per purchase, grouped by asset or by
   Envelope (with a subtotal per Envelope).
-- **Estimated costs**: what each line costs per year (Envelope fees and the
+- **Estimated costs**: what each Position costs per year (Envelope fees and the
   asset's ongoing charges) and what selling it today would cost (order fee and
   tax on the gain), shown beside the P/L, never subtracted from it.
 - **Foreign currencies**: the P/L of a USD or GBP holding can be split into

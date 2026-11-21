@@ -333,6 +333,7 @@
         envelopeFees: initial.envelopeFees,
         feesTyped: initial.feesTyped,
         feesSuggested: false,
+        feesMinimumSkipped: false, // the € minimum could not be converted: no rate yet
 
         init() {
           // A rate belongs to one currency: always fetch a new one when it changes.
@@ -351,24 +352,31 @@
         },
 
         // Fees of a new purchase from its envelope's schedule, until the user types some:
-        // max(order fee % x amount, minimum) + entry fee % x amount, in the asset currency.
-        // The minimum is in EUR: converted with the purchase rate (units per 1 EUR).
+        // max(order fee % x amount, minimum) + entry fee % x amount, in the asset currency
+        // (the order fee is the same formula as calc.estimate_costs). The minimum is in
+        // EUR: converted with the purchase rate (units per 1 EUR), skipped without one.
         suggestFees() {
           if (this.feesTyped) return;
           const schedule = this.envelopeFees[this.envelopeId];
           const quantity = parseFrenchNumber(this.quantity);
           const unitPrice = parseFrenchNumber(this.unitPrice);
-          if (!schedule || quantity === null || unitPrice === null) return;
+          if (!schedule || quantity === null || unitPrice === null) {
+            if (this.feesSuggested) this.fees = ""; // the suggestion no longer applies
+            this.feesSuggested = false;
+            return;
+          }
 
           const amount = quantity * unitPrice;
           let minimum = schedule.orderMinEur;
-          if (this.isForeign) {
+          this.feesMinimumSkipped = false;
+          if (this.isForeign && minimum > 0) {
             const rate = parseFrenchNumber(this.fxRate);
-            minimum = rate !== null && rate > 0 ? minimum * rate : 0;
+            this.feesMinimumSkipped = rate === null || rate <= 0;
+            minimum = this.feesMinimumSkipped ? 0 : minimum * rate;
           }
           const fee =
             Math.max((schedule.orderPct / 100) * amount, minimum) + (schedule.entryPct / 100) * amount;
-          this.fees = fee > 0 ? String(Math.round(fee * 100) / 100).replace(".", ",") : "";
+          this.fees = fee > 0 ? fee.toFixed(2).replace(".", ",") : "";
           this.feesSuggested = fee > 0;
         },
 
